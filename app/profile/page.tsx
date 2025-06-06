@@ -28,6 +28,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Loader2, Upload } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -47,6 +55,9 @@ export default function ProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [showPreviewDialog, setShowPreviewDialog] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -75,11 +86,42 @@ export default function ProfilePage() {
           .from('profiles')
           .select('*')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
         if (profileError) throw profileError;
 
-        if (profile) {
+        if (!profile) {
+          // Create a new profile if one doesn't exist
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              id: user.id,
+              email: user.email,
+              name: user.user_metadata?.name || "",
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+
+          if (insertError) throw insertError;
+
+          // Fetch the newly created profile
+          const { data: newProfile, error: newProfileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
+
+          if (newProfileError) throw newProfileError;
+
+          setAvatarUrl(newProfile.avatar_url);
+          form.reset({
+            name: newProfile.name || "",
+            bio: newProfile.bio || "",
+            website: newProfile.website || "",
+            twitter: newProfile.twitter || "",
+            linkedin: newProfile.linkedin || "",
+          });
+        } else {
           setAvatarUrl(profile.avatar_url);
           form.reset({
             name: profile.name || "",
@@ -128,18 +170,31 @@ export default function ProfilePage() {
       return;
     }
 
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPreviewImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+    setSelectedFile(file);
+    setShowPreviewDialog(true);
+  }
+
+  async function confirmAvatarUpload() {
+    if (!selectedFile) return;
+
     setIsUploading(true);
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) throw new Error('Not authenticated');
 
       // Upload file to Supabase Storage
-      const fileExt = file.name.split('.').pop();
+      const fileExt = selectedFile.name.split('.').pop();
       const filePath = `${user.id}/avatar.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, selectedFile, { upsert: true });
 
       if (uploadError) throw uploadError;
 
@@ -172,6 +227,9 @@ export default function ProfilePage() {
       });
     } finally {
       setIsUploading(false);
+      setShowPreviewDialog(false);
+      setPreviewImage(null);
+      setSelectedFile(null);
     }
   }
 
@@ -353,6 +411,45 @@ export default function ProfilePage() {
           </Form>
         </CardContent>
       </Card>
+
+      <Dialog open={showPreviewDialog} onOpenChange={setShowPreviewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Preview Profile Photo</DialogTitle>
+            <DialogDescription>
+              How would you like your new profile photo to look?
+            </DialogDescription>
+          </DialogHeader>
+          {previewImage && (
+            <div className="flex justify-center py-4">
+              <Avatar className="h-24 w-24">
+                <AvatarImage src={previewImage} />
+                <AvatarFallback>
+                  {form.getValues("name")?.charAt(0) || "?"}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPreviewDialog(false);
+                setPreviewImage(null);
+                setSelectedFile(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={confirmAvatarUpload}
+              disabled={isUploading}
+            >
+              {isUploading ? "Uploading..." : "Update Photo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

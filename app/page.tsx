@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import CoachShowcase from "@/components/home/coach-showcase";
 import TestimonialCarousel from "@/components/home/testimonial-carousel";
+import PlatformStats from "@/components/home/platform-stats";
 
 export default function Home() {
   return (
@@ -26,19 +27,8 @@ export default function Home() {
             </Button>
           </div>
           
-          <div className="mt-16 md:mt-24 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 w-full max-w-4xl mx-auto">
-            {[
-              { icon: Shield, label: "Verified Experts", value: "100+" },
-              { icon: Calendar, label: "Sessions Completed", value: "1,000+" },
-              { icon: Award, label: "Student Satisfaction", value: "98%" },
-              { icon: BarChart4, label: "Learning Topics", value: "50+" },
-            ].map((stat, i) => (
-              <div key={i} className="flex flex-col items-center">
-                <stat.icon className="h-8 w-8 mb-2 text-primary" />
-                <p className="text-2xl md:text-3xl font-bold">{stat.value}</p>
-                <p className="text-sm text-muted-foreground">{stat.label}</p>
-              </div>
-            ))}
+          <div className="mt-16 md:mt-24">
+            <PlatformStats />
           </div>
         </div>
       </section>

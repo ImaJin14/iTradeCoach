@@ -129,7 +129,7 @@ export default function SignIn() {
                       <div className="relative">
                         <Input 
                           type={showPassword ? "text" : "password"} 
-                          placeholder="••••••••" 
+                          placeholder="Password" 
                           {...field} 
                         />
                         <Button

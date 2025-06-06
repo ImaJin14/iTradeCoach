@@ -1,114 +1,6 @@
-"use client";
-
-import Link from "next/link";
-import { Check } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-const plans = {
-  monthly: [
-    {
-      id: "basic",
-      name: "Basic",
-      description: "Perfect for getting started with trading",
-      price: 49,
-      features: [
-        "2 coaching sessions per month",
-        "Basic trading strategies",
-        "Email support",
-        "Community access",
-        "Learning resources library"
-      ],
-      badge: null
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      description: "For serious traders looking to excel",
-      price: 99,
-      features: [
-        "4 coaching sessions per month",
-        "Advanced trading strategies",
-        "Priority email & chat support",
-        "Private community access",
-        "Premium learning resources",
-        "Weekly market analysis",
-        "Trading journal review"
-      ],
-      badge: "Most Popular"
-    },
-    {
-      id: "enterprise",
-      name: "Enterprise",
-      description: "Custom solutions for teams and institutions",
-      price: 299,
-      features: [
-        "Unlimited coaching sessions",
-        "Custom trading strategies",
-        "24/7 dedicated support",
-        "Private community",
-        "Enterprise resources",
-        "Daily market analysis",
-        "Portfolio review",
-        "Team training",
-        "Custom reporting"
-      ],
-      badge: "Custom"
-    }
-  ],
-  yearly: [
-    {
-      id: "basic",
-      name: "Basic",
-      description: "Perfect for getting started with trading",
-      price: 39,
-      features: [
-        "2 coaching sessions per month",
-        "Basic trading strategies",
-        "Email support",
-        "Community access",
-        "Learning resources library"
-      ],
-      badge: "Save 20%"
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      description: "For serious traders looking to excel",
-      price: 79,
-      features: [
-        "4 coaching sessions per month",
-        "Advanced trading strategies",
-        "Priority email & chat support",
-        "Private community access",
-        "Premium learning resources",
-        "Weekly market analysis",
-        "Trading journal review"
-      ],
-      badge: "Most Popular"
-    },
-    {
-      id: "enterprise",
-      name: "Enterprise",
-      description: "Custom solutions for teams and institutions",
-      price: 239,
-      features: [
-        "Unlimited coaching sessions",
-        "Custom trading strategies",
-        "24/7 dedicated support",
-        "Private community",
-        "Enterprise resources",
-        "Daily market analysis",
-        "Portfolio review",
-        "Team training",
-        "Custom reporting"
-      ],
-      badge: "Custom"
-    }
-  ]
-};
+import { PlanCard } from "@/components/pricing/plan-card";
+import { planVariants, BILLING_PERIODS } from "@/lib/plans";
 
 export default function PricingPage() {
   return (
@@ -128,87 +20,20 @@ export default function PricingPage() {
           </TabsList>
         </div>
 
-        <TabsContent value="monthly" className="space-y-8">
-          <div className="grid md:grid-cols-3 gap-8">
-            {plans.monthly.map((plan) => (
-              <Card key={plan.id} className="relative flex flex-col">
-                {plan.badge && (
-                  <div className="absolute -top-2 -right-2 z-10">
-                    <Badge variant={plan.badge === "Most Popular" ? "default" : "secondary"} className="px-3 py-1">
-                      {plan.badge}
-                    </Badge>
-                  </div>
-                )}
-                <CardHeader>
-                  <CardTitle>{plan.name}</CardTitle>
-                  <CardDescription>{plan.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="mb-6">
-                    <span className="text-4xl font-bold">${plan.price}</span>
-                    <span className="text-muted-foreground">/month</span>
-                  </div>
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, i) => (
-                      <li key={i} className="flex items-center">
-                        <Check className="h-4 w-4 text-primary mr-2 flex-shrink-0" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-                <CardFooter>
-                  <Button asChild className="w-full" variant={plan.badge === "Most Popular" ? "default" : "outline"}>
-                    <Link href={`/pricing/${plan.id}`}>
-                      {plan.id === "enterprise" ? "Contact Sales" : "Get Started"}
-                    </Link>
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="yearly" className="space-y-8">
-          <div className="grid md:grid-cols-3 gap-8">
-            {plans.yearly.map((plan) => (
-              <Card key={plan.id} className="relative flex flex-col">
-                {plan.badge && (
-                  <div className="absolute -top-2 -right-2 z-10">
-                    <Badge variant={plan.badge === "Most Popular" ? "default" : "secondary"} className="px-3 py-1">
-                      {plan.badge}
-                    </Badge>
-                  </div>
-                )}
-                <CardHeader>
-                  <CardTitle>{plan.name}</CardTitle>
-                  <CardDescription>{plan.description}</CardDescription>
-                </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="mb-6">
-                    <span className="text-4xl font-bold">${plan.price}</span>
-                    <span className="text-muted-foreground">/month</span>
-                  </div>
-                  <ul className="space-y-2">
-                    {plan.features.map((feature, i) => (
-                      <li key={i} className="flex items-center">
-                        <Check className="h-4 w-4 text-primary mr-2 flex-shrink-0" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-                <CardFooter>
-                  <Button asChild className="w-full" variant={plan.badge === "Most Popular" ? "default" : "outline"}>
-                    <Link href={`/pricing/${plan.id}`}>
-                      {plan.id === "enterprise" ? "Contact Sales" : "Get Started"}
-                    </Link>
-                  </Button>
-                </CardFooter>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
+        {BILLING_PERIODS.map((period) => (
+          <TabsContent key={period} value={period} className="space-y-8">
+            <div className="grid md:grid-cols-3 gap-8">
+              {planVariants[period].map((plan) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  featured={plan.badge === "Most Popular"}
+                  period={period}
+                />
+              ))}
+            </div>
+          </TabsContent>
+        ))}
       </Tabs>
 
       <div className="text-center space-y-4 pt-8">

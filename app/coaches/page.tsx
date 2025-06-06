@@ -60,7 +60,7 @@ export default function CoachesPage() {
         .from('coach_profiles')
         .select(`
           *,
-          users:user_id (
+          profiles:user_id (
             name,
             email
           )
@@ -69,7 +69,18 @@ export default function CoachesPage() {
 
       if (error) throw error;
       
-      setCoaches(data || []);
+      // Transform snake_case to camelCase
+      const transformedData = data?.map(coach => ({
+        ...coach,
+        hourlyRate: coach.hourly_rate,
+        expertiseAreas: coach.expertise_areas,
+        totalStudents: coach.total_students,
+        availabilitySchedule: coach.availability_schedule,
+        verificationStatus: coach.verification_status,
+        users: coach.profiles // Map the profiles relation to users for compatibility
+      }));
+      
+      setCoaches(transformedData || []);
     } catch (error) {
       console.error('Error fetching coaches:', error);
     } finally {

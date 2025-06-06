@@ -38,7 +38,11 @@ import { supabase } from "@/lib/supabase";
 const formSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
   email: z.string().email({ message: "Please enter a valid email address" }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters" }),
+  password: z.string()
+    .min(8, { message: "Password must be at least 8 characters" })
+    .regex(/[A-Z]/, { message: "Password must contain at least one uppercase letter" })
+    .regex(/[a-z]/, { message: "Password must contain at least one lowercase letter" })
+    .regex(/[0-9]/, { message: "Password must contain at least one number" }),
   role: z.enum(["student", "coach"], {
     required_error: "Please select your role",
   }),
@@ -73,7 +77,8 @@ export default function SignUp() {
           data: {
             name: data.name,
             role: data.role,
-          }
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`
         }
       });
 
@@ -87,21 +92,20 @@ export default function SignUp() {
       if (!authData.user) {
         throw new Error('Failed to create account. Please try again.');
       }
-      
+
       toast({
         title: "Account created!",
-        description: "Your account has been successfully created.",
+        description: "Please check your email to verify your account before signing in.",
       });
       
-      router.push("/dashboard");
-      router.refresh();
+      router.push("/sign-in");
     } catch (error: any) {
+      console.error("Sign up error:", error);
       toast({
         title: "Error",
         description: error.message || "An error occurred while creating your account. Please try again.",
         variant: "destructive",
       });
-      console.error("Sign up error:", error);
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +164,7 @@ export default function SignUp() {
                       <div className="relative">
                         <Input 
                           type={showPassword ? "text" : "password"} 
-                          placeholder="••••••••" 
+                          placeholder="Password" 
                           {...field} 
                         />
                         <Button

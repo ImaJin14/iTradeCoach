@@ -75,35 +75,22 @@ export default function SettingsPage() {
           .from('user_settings')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (settingsError && settingsError.code !== 'PGRST116') {
+        if (settingsError) {
           throw settingsError;
         }
 
-        if (settings) {
-          form.reset({
-            email: user.email || "",
-            notifications: settings.notifications || {
-              email: true,
-              push: true,
-              marketing: false,
-            },
-            timezone: settings.timezone || "UTC",
-            language: settings.language || "en",
-          });
-        } else {
-          form.reset({
-            email: user.email || "",
-            notifications: {
-              email: true,
-              push: true,
-              marketing: false,
-            },
-            timezone: "UTC",
-            language: "en",
-          });
-        }
+        form.reset({
+          email: user.email || "",
+          notifications: settings?.notifications || {
+            email: true,
+            push: true,
+            marketing: false,
+          },
+          timezone: settings?.timezone || "UTC",
+          language: settings?.language || "en",
+        });
       } catch (error) {
         console.error('Error loading settings:', error);
         toast({

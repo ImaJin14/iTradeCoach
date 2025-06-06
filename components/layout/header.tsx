@@ -15,7 +15,7 @@ import {
   NavigationMenuTrigger,
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
-import { LineChart, BookOpen, UserCircle } from "lucide-react";
+import { LineChart, BookOpen } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   DropdownMenu,
@@ -25,12 +25,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
+  const { toast } = useToast();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   
   useEffect(() => {
     async function getUser() {
@@ -43,6 +47,18 @@ export default function Header() {
             router.push('/sign-in');
           }
           return;
+        }
+        
+        // Fetch user profile to get avatar URL
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('avatar_url, name')
+          .eq('id', user.id)
+          .single();
+
+        if (profile) {
+          setAvatarUrl(profile.avatar_url);
+          user.user_metadata.name = profile.name;
         }
         
         setUser(user);
@@ -60,8 +76,34 @@ export default function Header() {
   }, [router, pathname]);
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    router.push('/');
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+
+      // Clear user state
+      setUser(null);
+      setAvatarUrl(null);
+
+      // Show success message
+      toast({
+        title: "Signed out successfully",
+        description: "You have been logged out of your account.",
+      });
+
+      // Redirect to home page
+      router.push('/');
+      router.refresh();
+    } catch (error: any) {
+      console.error('Error signing out:', error);
+      toast({
+        title: "Error signing out",
+        description: "There was a problem signing out. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
   
   const isActive = (path: string) => {
@@ -166,13 +208,16 @@ export default function Header() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost\" className="relative h-8 w-8 rounded-full">
-                    <UserCircle className="h-6 w-6" />
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`} />
+                      <AvatarFallback>{user.user_metadata?.name?.charAt(0) || user.email?.charAt(0)}</AvatarFallback>
+                    </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="end" forceMount>
                   <DropdownMenuLabel className="font-normal">
                     <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{user.user_metadata.name}</p>
+                      <p className="text-sm font-medium leading-none">{user.user_metadata?.name}</p>
                       <p className="text-xs leading-none text-muted-foreground">{user.email}</p>
                     </div>
                   </DropdownMenuLabel>
@@ -184,8 +229,12 @@ export default function Header() {
                     <Link href="/settings">Settings</Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleSignOut}>
-                    Log out
+                  <DropdownMenuItem 
+                    onClick={handleSignOut}
+                    disabled={loading}
+                    className="text-red-600 focus:text-red-600"
+                  >
+                    {loading ? "Signing out..." : "Log out"}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

@@ -2,6 +2,12 @@ import { notFound } from "next/navigation";
 
 const validLevels = ["beginner", "intermediate", "advanced"];
 
+export async function generateStaticParams() {
+  return validLevels.map((level) => ({
+    level: level,
+  }));
+}
+
 export default function LearningPath({ params }: { params: { level: string } }) {
   if (!validLevels.includes(params.level)) {
     return notFound();
