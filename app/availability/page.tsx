@@ -65,6 +65,17 @@ interface Session {
   student_avatar: string | null;
 }
 
+interface SupabaseSessionData {
+  id: string;
+  scheduled_time: string;
+  duration: number;
+  status: string;
+  student: {
+    name: string;
+    avatar_url: string | null;
+  } | null;
+}
+
 const DAYS_OF_WEEK = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 ];
@@ -219,13 +230,13 @@ export default function AvailabilityPage() {
 
       if (error) throw error;
 
-      const formattedSessions = data?.map(session => ({
+      const formattedSessions = (data as SupabaseSessionData[])?.map((session: SupabaseSessionData) => ({
         id: session.id,
         scheduled_time: session.scheduled_time,
         duration: session.duration,
         status: session.status,
-        student_name: session.student.name,
-        student_avatar: session.student.avatar_url
+        student_name: session.student?.name || 'Unknown Student',
+        student_avatar: session.student?.avatar_url || null
       })) || [];
 
       setSessions(formattedSessions);

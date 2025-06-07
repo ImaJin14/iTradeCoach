@@ -119,7 +119,15 @@ export default function AdminSessionsPage() {
         .order('scheduled_time', { ascending: false });
 
       if (error) throw error;
-      setSessions(data || []);
+      
+      // Map the data to ensure coach and student are single objects, not arrays
+      const mappedSessions = (data || []).map((session: any) => ({
+        ...session,
+        coach: Array.isArray(session.coach) ? session.coach[0] : session.coach,
+        student: Array.isArray(session.student) ? session.student[0] : session.student,
+      }));
+      
+      setSessions(mappedSessions);
     } catch (error: any) {
       console.error('Error fetching sessions:', error);
       toast({
