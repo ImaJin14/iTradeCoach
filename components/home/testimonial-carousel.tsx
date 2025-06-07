@@ -7,19 +7,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/lib/supabase";
 
-interface Testimonial {
-  id: string;
-  text: string;
-  author_id: string;
-  author_name: string;
-  author_title: string;
-  rating: number;
-  created_at: string;
-}
-
 export default function TestimonialCarousel() {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [testimonials, setTestimonials] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,7 +24,8 @@ export default function TestimonialCarousel() {
             author_name,
             author_title,
             rating,
-            created_at
+            created_at,
+            profiles:author_id (avatar_url)
           `)
           .eq('approved', true)
           .order('created_at', { ascending: false })
@@ -97,7 +88,10 @@ export default function TestimonialCarousel() {
                     <div className="relative mb-4">
                       <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-600 rounded-full blur opacity-40"></div>
                       <Avatar className="h-16 w-16 border-4 border-background relative">
-                        <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${testimonial.author_id}`} alt={testimonial.author_name} />
+                        <AvatarImage 
+                          src={testimonial.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${testimonial.author_id}`}
+                          alt={testimonial.author_name} 
+                        />
                         <AvatarFallback>{testimonial.author_name.charAt(0)}</AvatarFallback>
                       </Avatar>
                     </div>

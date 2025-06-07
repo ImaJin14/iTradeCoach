@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 interface PlatformStats {
+  totalUsers: number;
   expertCount: number;
   sessionCount: number;
   satisfactionRate: number;
@@ -12,6 +13,7 @@ interface PlatformStats {
 
 export default function PlatformStats() {
   const [stats, setStats] = useState<PlatformStats>({
+    totalUsers: 0,
     expertCount: 0,
     sessionCount: 0,
     satisfactionRate: 0,
@@ -22,6 +24,13 @@ export default function PlatformStats() {
   useEffect(() => {
     async function fetchStats() {
       try {
+        // Get total users count
+        const { count: totalUsers, error: usersError } = await supabase
+          .from('profiles')
+          .select('*', { count: 'exact', head: true });
+
+        if (usersError) throw usersError;
+
         // Get verified experts count
         const { count: expertCount, error: expertsError } = await supabase
           .from('coach_profiles')
@@ -64,6 +73,7 @@ export default function PlatformStats() {
         );
 
         setStats({
+          totalUsers: totalUsers || 0,
           expertCount: expertCount || 0,
           sessionCount: sessionCount || 0,
           satisfactionRate: Math.round((avgRating / 5) * 100),
@@ -81,8 +91,8 @@ export default function PlatformStats() {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 w-full max-w-4xl mx-auto">
-        {[...Array(4)].map((_, i) => (
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-8 w-full max-w-4xl mx-auto">
+        {[...Array(5)].map((_, i) => (
           <div key={i} className="flex flex-col items-center animate-pulse">
             <div className="h-8 w-8 rounded-full bg-muted mb-2"></div>
             <div className="h-8 w-24 bg-muted rounded mb-1"></div>
@@ -94,7 +104,11 @@ export default function PlatformStats() {
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 w-full max-w-4xl mx-auto">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 md:gap-8 w-full max-w-4xl mx-auto">
+      <div className="flex flex-col items-center">
+        <div className="text-2xl md:text-3xl font-bold">{stats.totalUsers}+</div>
+        <p className="text-sm text-muted-foreground">Total Users</p>
+      </div>
       <div className="flex flex-col items-center">
         <div className="text-2xl md:text-3xl font-bold">{stats.expertCount}+</div>
         <p className="text-sm text-muted-foreground">Verified Experts</p>

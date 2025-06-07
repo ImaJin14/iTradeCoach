@@ -283,91 +283,14 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Dialog open={isBookingDialogOpen} onOpenChange={setIsBookingDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="w-full mb-4">
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Check Availability
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Book a Session with {coach.name}</DialogTitle>
-                    <DialogDescription>
-                      Select a date and time for your 1-hour session
-                    </DialogDescription>
-                  </DialogHeader>
-                  
-                  <div className="grid gap-6 py-4">
-                    <div className="grid gap-2">
-                      <h4 className="font-medium">Available Dates</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        {timeSlots.map((day, index) => (
-                          <Button
-                            key={index}
-                            variant={selectedDate === day.day ? "default" : "outline"}
-                            className="w-full"
-                            onClick={() => {
-                              setSelectedDate(day.day);
-                              setSelectedTime("");
-                            }}
-                          >
-                            {day.day}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {selectedDate && (
-                      <div className="grid gap-2">
-                        <h4 className="font-medium">Available Times</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          {timeSlots.find(day => day.day === selectedDate)?.slots.map((time, index) => (
-                            <Button
-                              key={index}
-                              variant={selectedTime === time ? "default" : "outline"}
-                              className="w-full"
-                              onClick={() => setSelectedTime(time)}
-                            >
-                              <Clock className="h-4 w-4 mr-2" />
-                              {time}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {selectedDate && selectedTime && (
-                      <div className="border rounded-lg p-4 bg-muted/30">
-                        <h4 className="font-medium mb-2">Session Summary</h4>
-                        <ul className="space-y-2 text-sm">
-                          <li className="flex justify-between">
-                            <span className="text-muted-foreground">Date:</span>
-                            <span className="font-medium">{selectedDate}</span>
-                          </li>
-                          <li className="flex justify-between">
-                            <span className="text-muted-foreground">Time:</span>
-                            <span className="font-medium">{selectedTime}</span>
-                          </li>
-                          <li className="flex justify-between">
-                            <span className="text-muted-foreground">Duration:</span>
-                            <span className="font-medium">1 hour</span>
-                          </li>
-                          <li className="flex justify-between border-t mt-2 pt-2">
-                            <span className="text-muted-foreground">Price:</span>
-                            <span className="font-medium">${coach.hourlyRate}</span>
-                          </li>
-                        </ul>
-                        <Button className="w-full mt-4" onClick={() => setIsBookingDialogOpen(false)}>
-                          Confirm Booking
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </DialogContent>
-              </Dialog>
-              
               <div className="space-y-4">
+                <Button className="w-full" asChild>
+                  <Link href={`/coaches/${coach.id}/schedule`}>
+                    <Calendar className="h-4 w-4 mr-2" />
+                    View Schedule & Request Session
+                  </Link>
+                </Button>
+                
                 <div className="flex items-center justify-between p-3 bg-muted rounded-md">
                   <div className="flex items-center">
                     <Clock className="h-4 w-4 mr-2 text-muted-foreground" />

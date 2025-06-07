@@ -1,9 +1,77 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CheckCircle, DollarSign, Users, Award, BarChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
+
+interface PlatformStats {
+  averageRate: number;
+  activeStudents: number;
+  coachSatisfaction: number;
+  averageRating: number;
+}
 
 export default function BecomeACoachPage() {
+  const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    async function fetchPlatformStats() {
+      try {
+        // Get verified coaches
+        const { data: coaches, error: coachError } = await supabase
+          .from('coach_profiles')
+          .select('hourly_rate, total_students, rating')
+          .eq('verification_status', 'verified');
+
+        if (coachError) throw coachError;
+
+        // Calculate platform stats
+        const stats = coaches?.reduce((acc, coach) => {
+          return {
+            totalRate: acc.totalRate + (coach.hourly_rate || 0),
+            totalStudents: acc.totalStudents + (coach.total_students || 0),
+            totalRating: acc.totalRating + (coach.rating || 0),
+            coachCount: acc.coachCount + 1
+          };
+        }, { totalRate: 0, totalStudents: 0, totalRating: 0, coachCount: 0 });
+
+        setStats({
+          averageRate: Math.round(stats?.totalRate / (stats?.coachCount || 1)),
+          activeStudents: stats?.totalStudents || 0,
+          coachSatisfaction: 90, // This could be calculated from other metrics
+          averageRating: Number((stats?.totalRating / (stats?.coachCount || 1)).toFixed(1))
+        });
+      } catch (error: any) {
+        console.error('Error fetching platform stats:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load platform statistics. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchPlatformStats();
+  }, [toast]);
+
+  if (loading) {
+    return (
+      <div className="container py-16">
+        <div className="flex justify-center items-center h-64">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container py-16 space-y-16">
       <div className="text-center space-y-4">
@@ -22,28 +90,28 @@ export default function BecomeACoachPage() {
             title: "Earn More",
             description: "Set your own rates and earn from sharing your expertise",
             icon: DollarSign,
-            value: "$85/hr",
+            value: `$${stats?.averageRate}/hr`,
             label: "Average Rate"
           },
           {
             title: "Grow Network",
             description: "Connect with dedicated students worldwide",
             icon: Users,
-            value: "1,000+",
+            value: `${stats?.activeStudents}+`,
             label: "Active Students"
           },
           {
             title: "Build Brand",
             description: "Establish yourself as a trusted trading expert",
             icon: Award,
-            value: "90%",
+            value: `${stats?.coachSatisfaction}%`,
             label: "Coach Satisfaction"
           },
           {
             title: "Track Progress",
             description: "Monitor your impact with detailed analytics",
             icon: BarChart,
-            value: "4.8/5",
+            value: `${stats?.averageRating}/5`,
             label: "Average Rating"
           }
         ].map((stat, i) => (

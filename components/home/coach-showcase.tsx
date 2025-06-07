@@ -9,11 +9,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/lib/supabase";
-import type { CoachProfile } from "@/lib/types";
 
 export default function CoachShowcase() {
   const [hoveredCoach, setHoveredCoach] = useState<string | null>(null);
-  const [coaches, setCoaches] = useState<CoachProfile[]>([]);
+  const [coaches, setCoaches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,7 +22,11 @@ export default function CoachShowcase() {
           .from('coach_profiles')
           .select(`
             *,
-            users:profiles(name, email)
+            profiles:user_id (
+              name,
+              email,
+              avatar_url
+            )
           `)
           .eq('verification_status', 'verified')
           .order('rating', { ascending: false })
@@ -81,8 +84,8 @@ export default function CoachShowcase() {
         >
           <div className="relative h-48 w-full">
             <Image
-              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.user_id}`}
-              alt={coach.users.name}
+              src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.user_id}`}
+              alt={coach.profiles.name}
               fill
               className="object-cover"
               sizes="(max-width: 768px) 100vw, 33vw"
@@ -92,11 +95,14 @@ export default function CoachShowcase() {
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10 border-2 border-white">
-                  <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.user_id}`} alt={coach.users.name} />
-                  <AvatarFallback>{coach.users.name.charAt(0)}</AvatarFallback>
+                  <AvatarImage 
+                    src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.user_id}`} 
+                    alt={coach.profiles.name} 
+                  />
+                  <AvatarFallback>{coach.profiles.name.charAt(0)}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <CardTitle className="text-lg">{coach.users.name}</CardTitle>
+                  <CardTitle className="text-lg">{coach.profiles.name}</CardTitle>
                   <div className="flex items-center mt-1">
                     <StarIcon className="h-4 w-4 fill-yellow-400 text-yellow-400 mr-1" />
                     <span className="text-sm font-medium">{coach.rating}</span>
@@ -110,7 +116,7 @@ export default function CoachShowcase() {
           <CardContent className="py-2">
             <p className="text-sm text-muted-foreground line-clamp-2">{coach.bio}</p>
             <div className="flex flex-wrap gap-1 mt-3">
-              {coach.expertise_areas?.map((tag) => (
+              {coach.expertise_areas?.map((tag: string) => (
                 <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
               ))}
             </div>
