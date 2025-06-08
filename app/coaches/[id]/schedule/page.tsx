@@ -289,7 +289,7 @@ export default function CoachSchedulePage({ params }: { params: { id: string } }
 
       setIsDialogOpen(false);
       form.reset();
-      await fetchSessionRequests(currentUser.id);
+      await setSessionRequests(currentUser.id);
     } catch (error: any) {
       console.error('Error submitting session request:', error);
       toast({

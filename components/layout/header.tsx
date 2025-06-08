@@ -128,14 +128,14 @@ export default function Header() {
             <NavigationMenu className="hidden md:flex">
               <NavigationMenuList>
                 <NavigationMenuItem>
-                  <Link href="/dashboard" legacyBehavior passHref>
+                  <Link href="/dashboard"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Dashboard
                     </NavigationMenuLink>
                   </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/classroom" legacyBehavior passHref>
+                  <Link href="/classroom"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Classroom
                     </NavigationMenuLink>
@@ -148,42 +148,42 @@ export default function Header() {
             <NavigationMenu className="hidden md:flex">
               <NavigationMenuList>
                 <NavigationMenuItem>
-                  <Link href="/dashboard" legacyBehavior passHref>
+                  <Link href="/dashboard"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Dashboard
                     </NavigationMenuLink>
                   </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/students" legacyBehavior passHref>
+                  <Link href="/students"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Students
                     </NavigationMenuLink>
                   </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/classroom" legacyBehavior passHref>
+                  <Link href="/classroom"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Classroom
                     </NavigationMenuLink>
                   </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/sessions/schedule" legacyBehavior passHref>
+                  <Link href="/sessions/schedule"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Live Sessions
                     </NavigationMenuLink>
                   </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/sessions/requests" legacyBehavior passHref>
+                  <Link href="/sessions/requests"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Requests
                     </NavigationMenuLink>
                   </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/pricing" legacyBehavior passHref>
+                  <Link href="/pricing"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Pricing
                     </NavigationMenuLink>
@@ -197,7 +197,7 @@ export default function Header() {
               <NavigationMenuList>
                 {user && (
                   <NavigationMenuItem>
-                    <Link href="/dashboard\" legacyBehavior passHref>
+                    <Link href="/dashboard\"  passHref>
                       <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                         Dashboard
                       </NavigationMenuLink>
@@ -206,7 +206,7 @@ export default function Header() {
                 )}
                 {user && (
                   <NavigationMenuItem>
-                    <Link href="/coaches" legacyBehavior passHref>
+                    <Link href="/coaches"  passHref>
                       <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                         Find Coaches
                       </NavigationMenuLink>
@@ -215,7 +215,7 @@ export default function Header() {
                 )}
                 {user && (
                   <NavigationMenuItem>
-                    <Link href="/classroom" legacyBehavior passHref>
+                    <Link href="/classroom"  passHref>
                       <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                         Classroom
                       </NavigationMenuLink>
@@ -243,7 +243,7 @@ export default function Header() {
                         </NavigationMenuLink>
                       </li>
                       <li>
-                        <Link href="/learn" legacyBehavior passHref>
+                        <Link href="/learn"  passHref>
                           <NavigationMenuLink className={cn("block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground")}>
                             <div className="text-sm font-medium leading-none">Beginner</div>
                             <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
@@ -253,7 +253,7 @@ export default function Header() {
                         </Link>
                       </li>
                       <li>
-                        <Link href="/learn" legacyBehavior passHref>
+                        <Link href="/learn"  passHref>
                           <NavigationMenuLink className={cn("block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground")}>
                             <div className="text-sm font-medium leading-none">Intermediate</div>
                             <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
@@ -263,7 +263,7 @@ export default function Header() {
                         </Link>
                       </li>
                       <li>
-                        <Link href="/learn" legacyBehavior passHref>
+                        <Link href="/learn"  passHref>
                           <NavigationMenuLink className={cn("block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground")}>
                             <div className="text-sm font-medium leading-none">Advanced</div>
                             <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
@@ -276,7 +276,7 @@ export default function Header() {
                   </NavigationMenuContent>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/pricing" legacyBehavior passHref>
+                  <Link href="/pricing"  passHref>
                     <NavigationMenuLink className={navigationMenuTriggerStyle()}>
                       Pricing
                     </NavigationMenuLink>
@@ -292,7 +292,7 @@ export default function Header() {
             user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost\" className="relative h-8 w-8 rounded-full">
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                     <Avatar className="h-8 w-8">
                       <AvatarImage src={avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`} />
                       <AvatarFallback>{user.user_metadata?.name?.charAt(0) || user.email?.charAt(0)}</AvatarFallback>

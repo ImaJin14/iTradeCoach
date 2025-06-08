@@ -59,7 +59,13 @@ interface BlogPost {
   }>;
 }
 
-export default function BlogPostPage({ params }: { params: { slug: string } }) {
+interface BlogPostPageProps {
+  params: Promise<{
+    slug: string;
+  }>;
+}
+
+export default async function BlogPostPage({ params }: BlogPostPageProps) {
   const [post, setPost] = useState<BlogPost | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,7 +109,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
     }
 
     loadPost();
-  }, [params.slug, toast]);
+  }, [(await params).slug, toast]);
 
   async function fetchPost() {
     try {
@@ -121,7 +127,7 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
             slug
           )
         `)
-        .eq('slug', params.slug)
+        .eq('slug', (await params).slug)
         .single();
 
       if (postError) {

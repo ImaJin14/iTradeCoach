@@ -87,7 +87,12 @@ interface BlogTag {
   slug: string;
 }
 
-export default function EditBlogPostPage({ params }: { params: { id: string } }) {
+interface EditBlogPostPageProps {
+  params: Promise<{ id: string }>; // Type annotation matching the error
+}
+
+export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
+  const [postId, setPostId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('');
   const [post, setPost] = useState<BlogPost | null>(null);
@@ -114,6 +119,19 @@ export default function EditBlogPostPage({ params }: { params: { id: string } })
     },
   });
 
+  // Resolve the params promise and set postId
+  // Although the type hint is Promise, params is likely a regular object here
+  // due to how Next.js handles client components in the App Router.
+  // We keep the type annotation matching the error but access it directly.
+  useEffect(() => {
+    async function resolveParams() {
+      const resolvedParams = await params; // Await the promise
+      setPostId((await params).id);
+    }
+    resolveParams();
+  }, [params]);
+
+  // Load post data once postId is set
   useEffect(() => {
     async function loadPost() {
       try {
@@ -139,7 +157,7 @@ export default function EditBlogPostPage({ params }: { params: { id: string } })
         }
 
         await Promise.all([
-          fetchPost(user.id, profile?.role),
+          postId ? fetchPost(postId, user.id, profile?.role) : Promise.resolve(), // Use postId here
           fetchCategories(),
           fetchTags()
         ]);
@@ -150,17 +168,19 @@ export default function EditBlogPostPage({ params }: { params: { id: string } })
         setLoading(false);
       }
     }
+    
+    if (postId) { // Only run if postId is available
+      loadPost();
+    }
+  }, [postId, router]); // Depend on postId
 
-    loadPost();
-  }, [params.id, router]);
-
-  async function fetchPost(userId: string, role: string) {
+  async function fetchPost(id: string, userId: string, role: string) {
     try {
-      // Fetch the blog post
+      // Fetch the blog post using the resolved id
       const { data: postData, error: postError } = await supabase
         .from('blog_posts')
         .select('*')
-        .eq('id', params.id)
+        .eq('id', id) // Use the id argument
         .single();
 
       if (postError) {
@@ -199,10 +219,10 @@ export default function EditBlogPostPage({ params }: { params: { id: string } })
       };
 
       setPost(postWithTags);
-      setSelectedTags(postWithTags.tags.map(tag => tag.id));
+      setSelectedTags(postWithTags.tags.map((tag: { id: any; }) => tag.id));
 
       // Set form values
-      form.reset({
+      form.reset({ // Reset form after fetching post data
         title: postData.title,
         excerpt: postData.excerpt || "",
         content: postData.content,
