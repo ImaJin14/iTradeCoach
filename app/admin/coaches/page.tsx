@@ -126,7 +126,7 @@ export default function AdminCoachesPage() {
         .from('coach_profiles')
         .select(`
           *,
-          profiles:user_id (
+          profiles:coach_id (
             id,
             name,
             email,
@@ -141,7 +141,7 @@ export default function AdminCoachesPage() {
 
       // Transform coach data
       const transformedCoaches = coachData?.map(coach => ({
-        id: coach.profiles.id,
+        id: coach.profiles.coach_id,
         name: coach.profiles.name,
         email: coach.profiles.email,
         avatar_url: coach.profiles.avatar_url,

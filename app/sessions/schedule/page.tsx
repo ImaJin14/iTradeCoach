@@ -243,7 +243,7 @@ export default function ScheduleSessionPage() {
       const { data: studentProfiles, error: profileError } = await supabase
         .from('student_profiles')
         .select(`
-          user_id,
+          student_id,
           current_level,
           tokens_earned
         `)

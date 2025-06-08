@@ -183,7 +183,7 @@ export default function CoachSchedulePage({ params }: { params: { id: string } }
           .from('coach_profiles')
           .select(`
             *,
-            profiles:user_id (
+            profiles:coach_id (
               id,
               name,
               email,
@@ -197,7 +197,7 @@ export default function CoachSchedulePage({ params }: { params: { id: string } }
         if (coachError) throw coachError;
 
         setCoach({
-          id: coachData.user_id,
+          id: coachData.coach_id,
           name: coachData.profiles.name,
           email: coachData.profiles.email,
           avatar_url: coachData.profiles.avatar_url,

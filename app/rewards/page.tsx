@@ -26,7 +26,7 @@ export default function RewardsPage() {
         const { data: studentProfile, error: profileError } = await supabase
           .from('student_profiles')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('student_id', user.id)
           .single();
 
         if (profileError) throw profileError;

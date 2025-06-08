@@ -103,7 +103,7 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
           const { data: coachData, error: coachError } = await supabase
             .from('coach_profiles')
             .select('*')
-            .eq('user_id', params.id)
+            .eq('coach_id', params.id)
             .single();
 
           if (coachError) throw coachError;
@@ -116,7 +116,7 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
           const { data: studentData, error: studentError } = await supabase
             .from('student_profiles')
             .select('*')
-            .eq('user_id', params.id)
+            .eq('student_id', params.id)
             .single();
 
           if (studentError) throw studentError;

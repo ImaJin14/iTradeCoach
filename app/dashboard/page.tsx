@@ -100,7 +100,7 @@ export default function DashboardPage() {
           const { data: studentProfile } = await supabase
             .from('student_profiles')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('student_id', user.id)
             .maybeSingle();
 
           roleSpecificData = {
@@ -110,7 +110,7 @@ export default function DashboardPage() {
           const { data: coachProfile } = await supabase
             .from('coach_profiles')
             .select('*')
-            .eq('user_id', user.id)
+            .eq('coach_id', user.id)
             .maybeSingle();
 
           roleSpecificData = {

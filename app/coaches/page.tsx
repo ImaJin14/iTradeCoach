@@ -60,7 +60,7 @@ export default function CoachesPage() {
         .from('coach_profiles')
         .select(`
           *,
-          profiles:user_id (
+          profiles:coach_id (
             name,
             email
           )
@@ -77,7 +77,7 @@ export default function CoachesPage() {
         totalStudents: coach.total_students,
         availabilitySchedule: coach.availability_schedule,
         verificationStatus: coach.verification_status,
-        users: coach.profiles // Map the profiles relation to users for compatibility
+        users: coach.profiles.coach_id // Map the profiles relation to users for compatibility
       }));
       
       setCoaches(transformedData || []);

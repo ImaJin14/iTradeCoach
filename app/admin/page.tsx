@@ -183,7 +183,7 @@ export default function AdminDashboard() {
         .from('coach_profiles')
         .select(`
           *,
-          profiles:user_id (
+          profiles:coach_id (
             id,
             name,
             email,
@@ -201,7 +201,7 @@ export default function AdminDashboard() {
         .from('student_profiles')
         .select(`
           *,
-          profiles:user_id (
+          profiles:student_id (
             id,
             name,
             email,
@@ -288,7 +288,7 @@ export default function AdminDashboard() {
       
       // Transform coach data
       const transformedCoaches = coachData?.map(coach => ({
-        ...coach.profiles,
+        ...coach.profiles.coach_id,
         role: 'coach',
         verification_status: coach.verification_status,
         rating: coach.rating,
@@ -300,7 +300,7 @@ export default function AdminDashboard() {
 
       // Transform student data
       const transformedStudents = studentData?.map(student => ({
-        ...student.profiles,
+        ...student.profiles.student_id,
         role: 'student',
         current_level: student.current_level,
         tokens_earned: student.tokens_earned,
@@ -378,7 +378,7 @@ export default function AdminDashboard() {
       const { error } = await supabase
         .from('coach_profiles')
         .update({ verification_status: 'verified' })
-        .eq('user_id', coachId);
+        .eq('coach_id', coachId);
 
       if (error) throw error;
 
