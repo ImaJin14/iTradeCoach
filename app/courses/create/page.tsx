@@ -16,7 +16,8 @@ import {
   Clock,
   Tag,
   FileText,
-  Image as ImageIcon
+  Image as ImageIcon,
+  X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
