@@ -22,7 +22,7 @@ export default function CoachShowcase() {
           .from('coach_profiles')
           .select(`
             *,
-            profiles:user_id (
+            profiles:coach_id (
               name,
               email,
               avatar_url
@@ -75,16 +75,16 @@ export default function CoachShowcase() {
     <div className="grid md:grid-cols-3 gap-6">
       {coaches.map((coach) => (
         <Card 
-          key={coach.user_id} 
+          key={coach.coach_id} 
           className={`overflow-hidden transition-all duration-300 ${
-            hoveredCoach === coach.user_id ? 'shadow-lg scale-[1.02]' : 'shadow-md'
+            hoveredCoach === coach.coach_id ? 'shadow-lg scale-[1.02]' : 'shadow-md'
           }`}
-          onMouseEnter={() => setHoveredCoach(coach.user_id)}
+          onMouseEnter={() => setHoveredCoach(coach.coach_id)}
           onMouseLeave={() => setHoveredCoach(null)}
         >
           <div className="relative h-48 w-full">
             <Image
-              src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.user_id}`}
+              src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`}
               alt={coach.profiles.name}
               fill
               className="object-cover"
@@ -96,7 +96,7 @@ export default function CoachShowcase() {
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10 border-2 border-white">
                   <AvatarImage 
-                    src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.user_id}`} 
+                    src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`} 
                     alt={coach.profiles.name} 
                   />
                   <AvatarFallback>{coach.profiles.name.charAt(0)}</AvatarFallback>
@@ -123,7 +123,7 @@ export default function CoachShowcase() {
           </CardContent>
           <CardFooter className="pt-2 pb-4">
             <Button asChild className="w-full">
-              <Link href={`/coaches/${coach.user_id}`}>View Profile</Link>
+              <Link href={`/coaches/${coach.coach_id}`}>View Profile</Link>
             </Button>
           </CardFooter>
         </Card>

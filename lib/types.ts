@@ -11,7 +11,7 @@ export interface User {
 }
 
 export interface CoachProfile {
-  user_id: string;
+  coach_id: string;
   bio: string;
   expertiseAreas: string[];
   hourlyRate: number;

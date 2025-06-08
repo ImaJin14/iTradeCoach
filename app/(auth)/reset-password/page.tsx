@@ -159,7 +159,7 @@ export default function ResetPassword() {
                       <div className="relative">
                         <Input 
                           type={showConfirmPassword ? "text" : "password"} 
-                          placeholder="••••••••" 
+                          placeholder="password" 
                           {...field} 
                         />
                         <Button

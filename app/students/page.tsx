@@ -121,11 +121,11 @@ export default function StudentsPage() {
       const { data: studentProfiles, error: profileError } = await supabase
         .from('student_profiles')
         .select(`
-          user_id,
+          Student_id,
           current_level,
           tokens_earned
         `)
-        .in('user_id', studentIds);
+        .in('Student_id', studentIds);
 
       if (profileError) throw profileError;
 
@@ -135,7 +135,7 @@ export default function StudentsPage() {
       sessionData?.forEach(session => {
         const studentId = session.student_id;
         if (!studentsMap.has(studentId)) {
-          const profile = studentProfiles?.find(p => p.user_id === studentId);
+          const profile = studentProfiles?.find(p => p.Student_id === studentId);
           studentsMap.set(studentId, {
             id: studentId,
             name: session.student.name,
