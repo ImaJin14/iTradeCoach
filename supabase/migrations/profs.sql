@@ -51,12 +51,12 @@ END $$;
 -- ================================================================
 
 -- Main user profiles table
+
 CREATE TABLE IF NOT EXISTS profiles (
   id uuid PRIMARY KEY DEFAULT auth.uid(),
   name TEXT,
-  role TEXT CHECK (role IN ('student', 'coach', 'admin')),
+  role TEXT CHECK (role IN ('student', 'coach')),
   email TEXT,
-  subscription_status text DEFAULT 'none' CHECK (subscription_status IN ('none', 'active', 'past_due', 'canceled')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     linkedin text,
     avatar_url text,
     profile_complete boolean NOT NULL DEFAULT false,
+    subscription_status text DEFAULT 'none' CHECK (subscription_status IN ('none', 'active', 'past_due', 'canceled')),
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -86,7 +87,6 @@ CREATE TABLE IF NOT EXISTS coach_profiles (
     total_students integer DEFAULT 0 CHECK (total_students >= 0),
     earnings numeric(10,2) DEFAULT 0 CHECK (earnings >= 0),
     subscription_required boolean DEFAULT true,
-    subscription_active boolean DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     prof_id uuid REFERENCES user_profiles(prof_id),
     plan_id text REFERENCES subscription_plans(id),
-    status text NOT NULL CHECK (status IN ('active', 'canceled', 'past_due')),
+    --  status text NOT NULL CHECK (status IN ('active', 'canceled', 'past_due')),
     current_period_start timestamptz NOT NULL,
     current_period_end timestamptz NOT NULL,
     cancel_at_period_end boolean DEFAULT false,
@@ -170,7 +170,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     scheduled_time timestamptz NOT NULL,
     duration integer NOT NULL DEFAULT 60 CHECK (duration > 0),
     status session_status DEFAULT 'scheduled',
-    price numeric(10,2) DEFAULT 0 CHECK (price >= 0),
     notes text,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
@@ -198,13 +197,13 @@ CREATE TABLE IF NOT EXISTS session_requests (
 CREATE TABLE IF NOT EXISTS coach_availability (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     coach_id uuid NOT NULL REFERENCES coach_profiles(coach_id) ON DELETE CASCADE,
-    day_of_week integer NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6),
+    day_of_week integer NOT NULL CHECK (day_of_week >= 0 AND day_of_week <= 6), -- 0 = Sunday
     start_time time NOT NULL,
     end_time time NOT NULL,
     status text NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'busy', 'maybe')),
     notes text,
     is_recurring boolean NOT NULL DEFAULT true,
-    specific_date date,
+    specific_date date, -- for one-time changes
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT valid_time_range CHECK (start_time < end_time),
@@ -252,8 +251,8 @@ CREATE TABLE IF NOT EXISTS session_recordings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id uuid NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE,
     recording_url text NOT NULL,
-    duration integer,
-    file_size bigint,
+    duration integer, -- in seconds
+    file_size bigint, -- in bytes
     upload_status text NOT NULL DEFAULT 'processing' CHECK (upload_status IN ('processing', 'ready', 'failed')),
     created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -266,7 +265,7 @@ CREATE TABLE IF NOT EXISTS live_session_feedback (
     rating integer NOT NULL CHECK (rating >= 1 AND rating <= 5),
     feedback_text text,
     created_at timestamptz NOT NULL DEFAULT now(),
-    UNIQUE(live_session_id, student_id)
+    UNIQUE(live_session_id, student_id) -- One feedback per student per live session
 );
 
 -- Session materials and resources
@@ -283,7 +282,7 @@ CREATE TABLE IF NOT EXISTS session_materials (
     CONSTRAINT session_reference_check CHECK (
         (session_id IS NOT NULL AND live_session_id IS NULL) OR 
         (session_id IS NULL AND live_session_id IS NOT NULL)
-    )
+    ) -- Material belongs to either 1-on-1 or live session, not both
 );
 
 -- ================================================================
@@ -349,7 +348,7 @@ CREATE TABLE IF NOT EXISTS blog_posts (
     category_id uuid REFERENCES blog_categories(id) ON DELETE SET NULL,
     status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
     featured boolean NOT NULL DEFAULT false,
-    read_time integer DEFAULT 0,
+    read_time integer DEFAULT 0, -- in minutes
     views_count integer DEFAULT 0,
     published_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -406,6 +405,42 @@ CREATE TABLE IF NOT EXISTS testimonials (
 );
 
 -- ================================================================
+-- DROP ALL EXISTING TRIGGERS AND POLICIES (AFTER TABLES ARE CREATED)
+-- ================================================================
+
+DO $$ 
+DECLARE 
+    rec RECORD;
+BEGIN
+    -- Drop all existing triggers from public schema tables
+    FOR rec IN 
+        SELECT t.tgname as trigger_name, c.relname as table_name
+        FROM pg_trigger t
+        JOIN pg_class c ON t.tgrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE n.nspname = 'public'
+        AND NOT t.tgisinternal  -- exclude system triggers
+    LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', rec.trigger_name, rec.table_name);
+    END LOOP;
+    
+    -- Drop all existing RLS policies from public schema tables
+    FOR rec IN
+        SELECT policyname, tablename 
+        FROM pg_policies 
+        WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I', rec.policyname, rec.tablename);
+    END LOOP;
+    
+    RAISE NOTICE 'All existing triggers and policies dropped successfully!';
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE LOG 'Error during cleanup: %', SQLERRM;
+        -- Continue execution even if cleanup fails
+END $$;
+
+-- ================================================================
 -- SECTION 9: UTILITY FUNCTIONS
 -- ================================================================
 
@@ -422,13 +457,13 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
-    user_role_value text;
+    user_role_value user_role;
     user_name text;
 BEGIN
     -- Get role or default to 'student'
     user_role_value := COALESCE(
-        NEW.raw_user_meta_data->>'role',
-        'student'
+        (NEW.raw_user_meta_data->>'role')::user_role,
+        'student'::user_role
     );
 
     -- Get name or default to email prefix
@@ -442,13 +477,8 @@ BEGIN
     INSERT INTO public.profiles (id, email, name, role)
     VALUES (NEW.id, NEW.email, user_name, user_role_value);
 
-    -- Insert into user_profiles table
-    INSERT INTO public.user_profiles (prof_id)
-    VALUES (NEW.id);
-
-    -- Insert into user_settings table
-    INSERT INTO public.user_settings (id)
-    VALUES (NEW.id);
+    -- REMOVE OR COMMENT OUT THIS LINE:
+    -- INSERT INTO public.user_settings (id) VALUES (NEW.id);
 
     RETURN NEW;
 EXCEPTION
@@ -457,6 +487,8 @@ EXCEPTION
         RAISE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
 
 -- Populate role-specific tables
 CREATE OR REPLACE FUNCTION populate_role_specific_tables()
@@ -468,10 +500,8 @@ BEGIN
     -- Insert students
     WITH inserted_students AS (
         INSERT INTO student_profiles (student_id)
-        SELECT up.prof_id FROM user_profiles up
-        JOIN profiles p ON up.prof_id = p.id
-        WHERE p.role = 'student' 
-        AND up.prof_id NOT IN (SELECT student_id FROM student_profiles WHERE student_id IS NOT NULL)
+        SELECT prof_id FROM user_profiles 
+        WHERE role = 'student' AND prof_id NOT IN (SELECT student_id FROM student_profiles WHERE student_id IS NOT NULL)
         ON CONFLICT (student_id) DO NOTHING
         RETURNING student_id
     )
@@ -480,10 +510,8 @@ BEGIN
     -- Insert coaches
     WITH inserted_coaches AS (
         INSERT INTO coach_profiles (coach_id)
-        SELECT up.prof_id FROM user_profiles up
-        JOIN profiles p ON up.prof_id = p.id
-        WHERE p.role = 'coach' 
-        AND up.prof_id NOT IN (SELECT coach_id FROM coach_profiles WHERE coach_id IS NOT NULL)
+        SELECT prof_id FROM profiles 
+        WHERE role = 'coach' AND prof_id NOT IN (SELECT coach_id FROM coach_profiles WHERE coach_id IS NOT NULL)
         ON CONFLICT (coach_id) DO NOTHING
         RETURNING coach_id
     )
@@ -512,17 +540,39 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Check subscription requirements
+CREATE OR REPLACE FUNCTION check_subscription_requirements()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF (TG_OP = 'INSERT') OR (NEW.role IS DISTINCT FROM OLD.role) THEN
+        IF NEW.role = 'coach' THEN
+            UPDATE coach_profiles SET subscription_required = true WHERE coach_id = NEW.id;
+        END IF;
+
+        IF NEW.role = 'student' THEN
+            UPDATE student_profiles
+            SET subscription_required = EXISTS (
+                SELECT 1 FROM student_profiles
+                WHERE student_id = NEW.id AND selected_path IS NOT NULL
+            )
+            WHERE student_id = NEW.id;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Update subscription status
 CREATE OR REPLACE FUNCTION update_subscription_status()
 RETURNS TRIGGER AS $$
 BEGIN
-    UPDATE profiles SET subscription_status = NEW.status WHERE id = NEW.prof_id;
+    UPDATE profiles SET subscription_status = NEW.status WHERE id = NEW.id;
 
-    -- Update coach subscription status if this is a coach
-    UPDATE coach_profiles 
-    SET subscription_active = (NEW.status = 'active')
-    WHERE coach_id = NEW.prof_id;
-
+    IF NEW.status = 'active' THEN
+        UPDATE coach_profiles SET subscription_active = true WHERE id = NEW.coach_id;
+    ELSE
+        UPDATE coach_profiles SET subscription_active = false WHERE id = NEW.coach_id;
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -587,43 +637,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ================================================================
--- SECTION 10: DROP EXISTING TRIGGERS AND POLICIES
--- ================================================================
-
-DO $$ 
-DECLARE 
-    rec RECORD;
-BEGIN
-    -- Drop all existing triggers from public schema tables
-    FOR rec IN 
-        SELECT t.tgname as trigger_name, c.relname as table_name
-        FROM pg_trigger t
-        JOIN pg_class c ON t.tgrelid = c.oid
-        JOIN pg_namespace n ON c.relnamespace = n.oid
-        WHERE n.nspname = 'public'
-        AND NOT t.tgisinternal
-        AND t.tgname NOT LIKE 'RI_%'  -- Exclude referential integrity triggers
-    LOOP
-        EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', rec.trigger_name, rec.table_name);
-    END LOOP;
-    
-    -- Drop all existing RLS policies from public schema tables
-    FOR rec IN
-        SELECT policyname, tablename 
-        FROM pg_policies 
-        WHERE schemaname = 'public'
-    LOOP
-        EXECUTE format('DROP POLICY IF EXISTS %I ON %I', rec.policyname, rec.tablename);
-    END LOOP;
-    
-    RAISE NOTICE 'All existing triggers and policies dropped successfully!';
-EXCEPTION
-    WHEN OTHERS THEN
-        RAISE LOG 'Error during cleanup: %', SQLERRM;
-END $$;
-
--- ================================================================
--- SECTION 11: TRIGGERS
+-- SECTION 10: TRIGGERS
 -- ================================================================
 
 -- Core triggers
@@ -634,6 +648,15 @@ CREATE TRIGGER on_auth_user_created
 CREATE TRIGGER handle_role_change_trigger
     AFTER UPDATE OF role ON profiles
     FOR EACH ROW EXECUTE FUNCTION handle_role_change();
+
+CREATE TRIGGER check_subscription_requirements_trigger
+    AFTER INSERT OR UPDATE OF role ON profiles
+    FOR EACH ROW EXECUTE FUNCTION check_subscription_requirements();
+
+CREATE TRIGGER update_student_subscription_required
+    AFTER UPDATE OF selected_path ON student_profiles
+    FOR EACH ROW WHEN (NEW.selected_path IS DISTINCT FROM OLD.selected_path)
+    EXECUTE FUNCTION check_subscription_requirements();
 
 CREATE TRIGGER update_subscription_status_trigger
     AFTER INSERT OR UPDATE ON subscriptions
@@ -650,9 +673,6 @@ CREATE TRIGGER blog_post_before_insert_update_trigger
 -- Updated_at triggers for all relevant tables
 CREATE TRIGGER update_profiles_updated_at 
     BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_user_profiles_updated_at 
-    BEFORE UPDATE ON user_profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_coach_profiles_updated_at 
     BEFORE UPDATE ON coach_profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -697,7 +717,7 @@ CREATE TRIGGER update_blog_comments_updated_at
     BEFORE UPDATE ON blog_comments FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ================================================================
--- SECTION 12: ROW LEVEL SECURITY
+-- SECTION 11: ROW LEVEL SECURITY (CORRECTED)
 -- ================================================================
 
 -- Enable RLS on all tables
@@ -737,18 +757,6 @@ CREATE POLICY "Users can update own profile"
     USING (auth.uid() = id)
     WITH CHECK (auth.uid() = id);
 
--- User profile policies
-CREATE POLICY "User profiles are viewable by authenticated users"
-    ON user_profiles FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "Users can update their own user profile"
-    ON user_profiles FOR UPDATE TO authenticated
-    USING (auth.uid() = prof_id)
-    WITH CHECK (auth.uid() = prof_id);
-
-CREATE POLICY "System can insert user profiles"
-    ON user_profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = prof_id);
-
 -- Coach profile policies
 CREATE POLICY "Coach profiles are publicly viewable"
     ON coach_profiles FOR SELECT TO authenticated USING (true);
@@ -780,7 +788,7 @@ CREATE POLICY "Subscription plans are viewable by everyone"
 
 CREATE POLICY "Users can view own subscriptions"
     ON subscriptions FOR SELECT TO authenticated 
-    USING (auth.uid() = prof_id);
+    USING (auth.uid() = coach_id OR auth.uid() = student_id);
 
 CREATE POLICY "System can manage subscriptions"
     ON subscriptions FOR ALL TO service_role USING (true);
@@ -788,133 +796,121 @@ CREATE POLICY "System can manage subscriptions"
 -- Payment policies
 CREATE POLICY "Users can view own payment history"
     ON payment_history FOR SELECT TO authenticated 
-    USING (auth.uid() = prof_id);
+    USING (auth.uid() = coach_id OR auth.uid() = student_id);
 
 CREATE POLICY "System can insert payments"
     ON payment_history FOR INSERT TO service_role WITH CHECK (true);
 
--- Session policies (continued)
-CREATE POLICY "Coaches can create sessions"
-    ON sessions FOR INSERT TO authenticated 
-    WITH CHECK (auth.uid() = coach_id);
-
-CREATE POLICY "Session participants can update sessions"
-    ON sessions FOR UPDATE TO authenticated
+-- Session policies
+CREATE POLICY "Session participants can view sessions"
+    ON sessions FOR SELECT TO authenticated
     USING (auth.uid() = coach_id OR auth.uid() = student_id);
+
+CREATE POLICY "Coaches can manage their sessions"
+    ON sessions FOR ALL TO authenticated
+    USING (auth.uid() = coach_id) WITH CHECK (auth.uid() = coach_id);
+
+CREATE POLICY "Students can view their sessions"
+    ON sessions FOR SELECT TO authenticated
+    USING (auth.uid() = student_id);
 
 -- Session request policies
-CREATE POLICY "Session request participants can view requests"
-    ON session_requests FOR SELECT TO authenticated
-    USING (auth.uid() = coach_id OR auth.uid() = student_id);
-
 CREATE POLICY "Students can create session requests"
     ON session_requests FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = student_id);
 
-CREATE POLICY "Session request participants can update requests"
+CREATE POLICY "Students can manage their own requests"
+    ON session_requests FOR ALL TO authenticated
+    USING (auth.uid() = student_id) WITH CHECK (auth.uid() = student_id);
+
+CREATE POLICY "Coaches can respond to session requests"
     ON session_requests FOR UPDATE TO authenticated
+    USING (auth.uid() = coach_id) WITH CHECK (auth.uid() = coach_id);
+
+CREATE POLICY "Coaches can view their requests"
+    ON session_requests FOR SELECT TO authenticated
     USING (auth.uid() = coach_id OR auth.uid() = student_id);
 
 -- Coach availability policies
-CREATE POLICY "Anyone can view coach availability"
+CREATE POLICY "Public can view coach availability"
     ON coach_availability FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "Coaches can manage their availability"
+CREATE POLICY "Coaches can manage their own availability"
     ON coach_availability FOR ALL TO authenticated
-    USING (auth.uid() = coach_id)
-    WITH CHECK (auth.uid() = coach_id);
+    USING (auth.uid() = coach_id) WITH CHECK (auth.uid() = coach_id);
 
 -- Live session policies
-CREATE POLICY "Live sessions are publicly viewable"
-    ON live_sessions FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Public can view scheduled sessions"
+    ON live_sessions FOR SELECT TO authenticated
+    USING (status IN ('scheduled', 'live'));
 
-CREATE POLICY "Coaches can manage their live sessions"
+CREATE POLICY "Coaches can manage their own sessions"
     ON live_sessions FOR ALL TO authenticated
-    USING (auth.uid() = coach_id)
-    WITH CHECK (auth.uid() = coach_id);
+    USING (auth.uid() = coach_id) WITH CHECK (auth.uid() = coach_id);
 
 -- Session enrollment policies
-CREATE POLICY "Users can view their own enrollments"
-    ON session_enrollments FOR SELECT TO authenticated
-    USING (
-        auth.uid() = student_id OR 
-        auth.uid() IN (SELECT coach_id FROM live_sessions WHERE id = session_id)
-    );
-
 CREATE POLICY "Students can enroll in sessions"
     ON session_enrollments FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = student_id);
 
-CREATE POLICY "Students can update their enrollments"
-    ON session_enrollments FOR UPDATE TO authenticated
-    USING (auth.uid() = student_id);
+CREATE POLICY "Students can manage their own enrollments"
+    ON session_enrollments FOR ALL TO authenticated
+    USING (auth.uid() = student_id) WITH CHECK (auth.uid() = student_id);
 
--- Session recording policies
-CREATE POLICY "Session recordings viewable by enrolled students and coaches"
-    ON session_recordings FOR SELECT TO authenticated
+CREATE POLICY "Coaches can view enrollments for their sessions"
+    ON session_enrollments FOR SELECT TO authenticated
     USING (
-        auth.uid() IN (
-            SELECT coach_id FROM live_sessions WHERE id = session_id
-        ) OR
-        auth.uid() IN (
-            SELECT student_id FROM session_enrollments WHERE session_id = session_recordings.session_id
+        EXISTS (
+            SELECT 1 FROM live_sessions
+            WHERE live_sessions.id = session_enrollments.session_id
+            AND live_sessions.coach_id = auth.uid()
         )
     );
 
-CREATE POLICY "Coaches can manage session recordings"
+-- Recording policies
+CREATE POLICY "Session participants can access recordings"
+    ON session_recordings FOR SELECT TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM live_sessions ls
+            WHERE ls.id = session_recordings.session_id
+            AND (
+                ls.coach_id = auth.uid() OR -- Coach can always access
+                EXISTS ( -- Student can access if they attended
+                    SELECT 1 FROM session_enrollments se
+                    WHERE se.session_id = ls.id
+                    AND se.student_id = auth.uid()
+                    AND se.status = 'attended'
+                )
+            )
+        )
+    );
+
+CREATE POLICY "Coaches can manage recordings for their sessions"
     ON session_recordings FOR ALL TO authenticated
     USING (
-        auth.uid() IN (SELECT coach_id FROM live_sessions WHERE id = session_id)
+        EXISTS (
+            SELECT 1 FROM live_sessions
+            WHERE live_sessions.id = session_recordings.session_id
+            AND live_sessions.coach_id = auth.uid()
+        )
     );
-
--- Live session feedback policies
-CREATE POLICY "Users can view feedback for sessions they're involved in"
-    ON live_session_feedback FOR SELECT TO authenticated
-    USING (
-        auth.uid() = student_id OR
-        auth.uid() IN (SELECT coach_id FROM live_sessions WHERE id = live_session_id)
-    );
-
-CREATE POLICY "Students can create feedback"
-    ON live_session_feedback FOR INSERT TO authenticated
-    WITH CHECK (auth.uid() = student_id);
-
-CREATE POLICY "Students can update their own feedback"
-    ON live_session_feedback FOR UPDATE TO authenticated
-    USING (auth.uid() = student_id);
-
--- Session materials policies
-CREATE POLICY "Session materials viewable by participants"
-    ON session_materials FOR SELECT TO authenticated
-    USING (
-        auth.uid() = uploaded_by OR
-        (session_id IS NOT NULL AND auth.uid() IN (
-            SELECT coach_id FROM sessions WHERE id = session_id
-            UNION
-            SELECT student_id FROM sessions WHERE id = session_id
-        )) OR
-        (live_session_id IS NOT NULL AND (
-            auth.uid() IN (SELECT coach_id FROM live_sessions WHERE id = live_session_id) OR
-            auth.uid() IN (SELECT student_id FROM session_enrollments WHERE session_id = live_session_id)
-        ))
-    );
-
-CREATE POLICY "Coaches can upload session materials"
-    ON session_materials FOR INSERT TO authenticated
-    WITH CHECK (auth.uid() = uploaded_by);
-
-CREATE POLICY "Uploaders can update their materials"
-    ON session_materials FOR UPDATE TO authenticated
-    USING (auth.uid() = uploaded_by);
 
 -- Video template policies
-CREATE POLICY "Coaches can manage their video templates"
-    ON video_templates FOR ALL TO authenticated
-    USING (auth.uid() = coach_id)
+CREATE POLICY "Coaches can view their templates"
+    ON video_templates FOR SELECT TO authenticated
+    USING (auth.uid() = coach_id);
+
+CREATE POLICY "Coaches can create video templates"
+    ON video_templates FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = coach_id);
 
+CREATE POLICY "Coaches can manage their own video templates"
+    ON video_templates FOR ALL TO authenticated
+    USING (auth.uid() = coach_id) WITH CHECK (auth.uid() = coach_id);
+
 -- Video response policies
-CREATE POLICY "Video responses viewable by involved parties"
+CREATE POLICY "Students can view their video responses"
     ON video_responses FOR SELECT TO authenticated
     USING (auth.uid() = coach_id OR auth.uid() = student_id);
 
@@ -922,271 +918,305 @@ CREATE POLICY "Coaches can create video responses"
     ON video_responses FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = coach_id);
 
-CREATE POLICY "Coaches can update their video responses"
-    ON video_responses FOR UPDATE TO authenticated
-    USING (auth.uid() = coach_id);
-
--- Blog policies
-CREATE POLICY "Blog categories are publicly viewable"
-    ON blog_categories FOR SELECT TO public USING (true);
-
-CREATE POLICY "Blog tags are publicly viewable"
-    ON blog_tags FOR SELECT TO public USING (true);
-
-CREATE POLICY "Published blog posts are publicly viewable"
-    ON blog_posts FOR SELECT TO public
-    USING (status = 'published');
-
-CREATE POLICY "Authors can view their own blog posts"
-    ON blog_posts FOR SELECT TO authenticated
-    USING (auth.uid() = author_id);
-
-CREATE POLICY "Authors can manage their blog posts"
-    ON blog_posts FOR ALL TO authenticated
-    USING (auth.uid() = author_id)
-    WITH CHECK (auth.uid() = author_id);
-
-CREATE POLICY "Blog post tags are publicly viewable"
-    ON blog_post_tags FOR SELECT TO public USING (true);
-
-CREATE POLICY "Authors can manage their post tags"
-    ON blog_post_tags FOR ALL TO authenticated
-    USING (
-        auth.uid() IN (SELECT author_id FROM blog_posts WHERE id = post_id)
-    );
-
-CREATE POLICY "Approved blog comments are publicly viewable"
-    ON blog_comments FOR SELECT TO public
-    USING (status = 'approved');
-
-CREATE POLICY "Users can view their own comments"
-    ON blog_comments FOR SELECT TO authenticated
-    USING (auth.uid() = author_id);
-
-CREATE POLICY "Users can create blog comments"
-    ON blog_comments FOR INSERT TO authenticated
-    WITH CHECK (auth.uid() = author_id);
-
-CREATE POLICY "Users can update their own comments"
-    ON blog_comments FOR UPDATE TO authenticated
-    USING (auth.uid() = author_id);
-
--- Course policies
-CREATE POLICY "Course participants can view courses"
-    ON courses FOR SELECT TO authenticated
-    USING (auth.uid() = student_id OR auth.uid() = coach_id);
-
-CREATE POLICY "Coaches can create courses"
-    ON courses FOR INSERT TO authenticated
-    WITH CHECK (auth.uid() = coach_id);
-
-CREATE POLICY "Course participants can update courses"
-    ON courses FOR UPDATE TO authenticated
-    USING (auth.uid() = student_id OR auth.uid() = coach_id);
-
 -- Testimonial policies
-CREATE POLICY "Approved testimonials are publicly viewable"
-    ON testimonials FOR SELECT TO public
-    USING (approved = true);
-
-CREATE POLICY "Users can view their own testimonials"
-    ON testimonials FOR SELECT TO authenticated
-    USING (auth.uid() = author_id);
+CREATE POLICY "Public can view approved testimonials"
+    ON testimonials FOR SELECT TO public USING (approved = true);
 
 CREATE POLICY "Users can create testimonials"
     ON testimonials FOR INSERT TO authenticated
     WITH CHECK (auth.uid() = author_id);
 
-CREATE POLICY "Users can update their own testimonials"
-    ON testimonials FOR UPDATE TO authenticated
-    USING (auth.uid() = author_id);
+CREATE POLICY "Authors can manage their testimonials"
+    ON testimonials FOR ALL TO authenticated
+    USING (auth.uid() = author_id) WITH CHECK (auth.uid() = author_id);
+
+-- Blog policies
+CREATE POLICY "Public can view blog categories"
+    ON blog_categories FOR SELECT TO public USING (true);
+
+CREATE POLICY "Admins can manage blog categories"
+    ON blog_categories FOR ALL TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    );
+
+CREATE POLICY "Public can view blog tags"
+    ON blog_tags FOR SELECT TO public USING (true);
+
+CREATE POLICY "Admins can manage blog tags"
+    ON blog_tags FOR ALL TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    );
+
+CREATE POLICY "Public can view published posts"
+    ON blog_posts FOR SELECT TO public USING (status = 'published');
+
+CREATE POLICY "Authors can create blog posts"
+    ON blog_posts FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = author_id);
+
+CREATE POLICY "Authors can update their posts"
+    ON blog_posts FOR UPDATE TO authenticated
+    USING (auth.uid() = author_id) WITH CHECK (auth.uid() = author_id);
+
+CREATE POLICY "Admins can manage all blog content"
+    ON blog_posts FOR ALL TO authenticated
+    USING (
+        auth.uid() = author_id OR 
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    );
+
+CREATE POLICY "Public can view post tags"
+    ON blog_post_tags FOR SELECT TO public
+    USING (
+        EXISTS (
+            SELECT 1 FROM blog_posts
+            WHERE blog_posts.id = blog_post_tags.post_id
+            AND blog_posts.status = 'published'
+        )
+    );
+
+CREATE POLICY "Authors can manage tags for their posts"
+    ON blog_post_tags FOR ALL TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM blog_posts
+            WHERE blog_posts.id = blog_post_tags.post_id
+            AND blog_posts.author_id = auth.uid()
+        )
+    );
+
+-- Blog comment policies
+CREATE POLICY "Public can view approved comments"
+    ON blog_comments FOR SELECT TO public USING (status = 'approved');
+
+CREATE POLICY "Users can create comments"
+    ON blog_comments FOR INSERT TO authenticated
+    WITH CHECK (auth.uid() = author_id);
+
+CREATE POLICY "Authors can manage their comments"
+    ON blog_comments FOR ALL TO authenticated
+    USING (auth.uid() = author_id) WITH CHECK (auth.uid() = author_id);
+
+CREATE POLICY "Admins can moderate comments"
+    ON blog_comments FOR ALL TO authenticated
+    USING (
+        auth.uid() = author_id OR
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    );
+
+-- Course policies
+CREATE POLICY "Public can view courses"
+    ON courses FOR SELECT TO public USING (is_hidden = false);
+
+CREATE POLICY "Authenticated users can view courses"
+    ON courses FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Admins can manage courses"
+    ON courses FOR ALL TO authenticated
+    USING (
+        EXISTS (
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
+        )
+    );
 
 -- ================================================================
--- SECTION 13: INDEXES FOR PERFORMANCE
+-- SECTION 12: INDEXES FOR PERFORMANCE
 -- ================================================================
 
--- User and profile indexes
-CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role);
-CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles(email);
-CREATE INDEX IF NOT EXISTS idx_profiles_subscription_status ON profiles(subscription_status);
+-- Profile indexes
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles (role);
+CREATE INDEX IF NOT EXISTS idx_profiles_subscription_status ON profiles (subscription_status);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON profiles (email);
 
 -- Coach profile indexes
-CREATE INDEX IF NOT EXISTS idx_coach_profiles_verification_status ON coach_profiles(verification_status);
-CREATE INDEX IF NOT EXISTS idx_coach_profiles_rating ON coach_profiles(rating);
-CREATE INDEX IF NOT EXISTS idx_coach_profiles_hourly_rate ON coach_profiles(hourly_rate);
-CREATE INDEX IF NOT EXISTS idx_coach_profiles_subscription_active ON coach_profiles(subscription_active);
+CREATE INDEX IF NOT EXISTS idx_coach_profiles_verification ON coach_profiles (verification_status);
+CREATE INDEX IF NOT EXISTS idx_coach_profiles_rating ON coach_profiles (rating DESC);
+CREATE INDEX IF NOT EXISTS idx_coach_profiles_subscription ON coach_profiles (subscription_active);
 
 -- Student profile indexes
-CREATE INDEX IF NOT EXISTS idx_student_profiles_current_level ON student_profiles(current_level);
-CREATE INDEX IF NOT EXISTS idx_student_profiles_selected_coach ON student_profiles(selected_coach_id);
+CREATE INDEX IF NOT EXISTS idx_student_profiles_level ON student_profiles (current_level);
+CREATE INDEX IF NOT EXISTS idx_student_profiles_coach ON student_profiles (selected_coach_id);
 
 -- Session indexes
-CREATE INDEX IF NOT EXISTS idx_sessions_coach_id ON sessions(coach_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_student_id ON sessions(student_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_scheduled_time ON sessions(scheduled_time);
-CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_coach ON sessions (coach_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_student ON sessions (student_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_time ON sessions (scheduled_time);
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions (status);
 
 -- Session request indexes
-CREATE INDEX IF NOT EXISTS idx_session_requests_coach_id ON session_requests(coach_id);
-CREATE INDEX IF NOT EXISTS idx_session_requests_student_id ON session_requests(student_id);
-CREATE INDEX IF NOT EXISTS idx_session_requests_status ON session_requests(status);
-CREATE INDEX IF NOT EXISTS idx_session_requests_preferred_time ON session_requests(preferred_time);
+CREATE INDEX IF NOT EXISTS idx_session_requests_coach ON session_requests (coach_id);
+CREATE INDEX IF NOT EXISTS idx_session_requests_student ON session_requests (student_id);
+CREATE INDEX IF NOT EXISTS idx_session_requests_status ON session_requests (status);
+CREATE INDEX IF NOT EXISTS idx_session_requests_time ON session_requests (preferred_time);
 
 -- Coach availability indexes
-CREATE INDEX IF NOT EXISTS idx_coach_availability_coach_id ON coach_availability(coach_id);
-CREATE INDEX IF NOT EXISTS idx_coach_availability_day_of_week ON coach_availability(day_of_week);
-CREATE INDEX IF NOT EXISTS idx_coach_availability_specific_date ON coach_availability(specific_date);
+CREATE INDEX IF NOT EXISTS idx_coach_availability_coach ON coach_availability (coach_id);
+CREATE INDEX IF NOT EXISTS idx_coach_availability_day ON coach_availability (day_of_week);
+CREATE INDEX IF NOT EXISTS idx_coach_availability_date ON coach_availability (specific_date);
 
 -- Live session indexes
-CREATE INDEX IF NOT EXISTS idx_live_sessions_coach_id ON live_sessions(coach_id);
-CREATE INDEX IF NOT EXISTS idx_live_sessions_scheduled_time ON live_sessions(scheduled_time);
-CREATE INDEX IF NOT EXISTS idx_live_sessions_status ON live_sessions(status);
-CREATE INDEX IF NOT EXISTS idx_live_sessions_learning_path ON live_sessions(learning_path);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_coach ON live_sessions (coach_id);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_time ON live_sessions (scheduled_time);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_status ON live_sessions (status);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_path ON live_sessions (learning_path);
 
--- Session enrollment indexes
-CREATE INDEX IF NOT EXISTS idx_session_enrollments_session_id ON session_enrollments(session_id);
-CREATE INDEX IF NOT EXISTS idx_session_enrollments_student_id ON session_enrollments(student_id);
-CREATE INDEX IF NOT EXISTS idx_session_enrollments_status ON session_enrollments(status);
+-- Enrollment indexes
+CREATE INDEX IF NOT EXISTS idx_session_enrollments_session ON session_enrollments (session_id);
+CREATE INDEX IF NOT EXISTS idx_session_enrollments_student ON session_enrollments (student_id);
+CREATE INDEX IF NOT EXISTS idx_session_enrollments_status ON session_enrollments (status);
 
 -- Subscription indexes
-CREATE INDEX IF NOT EXISTS idx_subscriptions_prof_id ON subscriptions(prof_id);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions(status);
-CREATE INDEX IF NOT EXISTS idx_subscriptions_current_period_end ON subscriptions(current_period_end);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions (id);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_status ON subscriptions (status);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_period ON subscriptions (current_period_end);
 
--- Payment history indexes
-CREATE INDEX IF NOT EXISTS idx_payment_history_prof_id ON payment_history(prof_id);
-CREATE INDEX IF NOT EXISTS idx_payment_history_status ON payment_history(status);
-CREATE INDEX IF NOT EXISTS idx_payment_history_created_at ON payment_history(created_at);
+-- Payment indexes
+CREATE INDEX IF NOT EXISTS idx_payment_history_user ON payment_history (id);
+CREATE INDEX IF NOT EXISTS idx_payment_history_status ON payment_history (status);
+CREATE INDEX IF NOT EXISTS idx_payment_history_created ON payment_history (created_at DESC);
+
+-- Video indexes
+CREATE INDEX IF NOT EXISTS idx_video_templates_coach ON video_templates (coach_id);
+CREATE INDEX IF NOT EXISTS idx_video_responses_coach ON video_responses (coach_id);
+CREATE INDEX IF NOT EXISTS idx_video_responses_student ON video_responses (student_id);
+CREATE INDEX IF NOT EXISTS idx_video_responses_template ON video_responses (template_id);
 
 -- Blog indexes
-CREATE INDEX IF NOT EXISTS idx_blog_posts_status ON blog_posts(status);
-CREATE INDEX IF NOT EXISTS idx_blog_posts_author_id ON blog_posts(author_id);
-CREATE INDEX IF NOT EXISTS idx_blog_posts_category_id ON blog_posts(category_id);
-CREATE INDEX IF NOT EXISTS idx_blog_posts_published_at ON blog_posts(published_at);
-CREATE INDEX IF NOT EXISTS idx_blog_posts_featured ON blog_posts(featured);
-CREATE INDEX IF NOT EXISTS idx_blog_posts_slug ON blog_posts(slug);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_author ON blog_posts (author_id);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_category ON blog_posts (category_id);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_status ON blog_posts (status);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_published ON blog_posts (published_at DESC);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_slug ON blog_posts (slug);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_featured ON blog_posts (featured, published_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_blog_comments_post_id ON blog_comments(post_id);
-CREATE INDEX IF NOT EXISTS idx_blog_comments_author_id ON blog_comments(author_id);
-CREATE INDEX IF NOT EXISTS idx_blog_comments_status ON blog_comments(status);
+-- Full text search indexes
+CREATE INDEX IF NOT EXISTS idx_blog_posts_search ON blog_posts 
+    USING gin(to_tsvector('english', title || ' ' || COALESCE(content, '')));
 
--- Video system indexes
-CREATE INDEX IF NOT EXISTS idx_video_templates_coach_id ON video_templates(coach_id);
-CREATE INDEX IF NOT EXISTS idx_video_responses_coach_id ON video_responses(coach_id);
-CREATE INDEX IF NOT EXISTS idx_video_responses_student_id ON video_responses(student_id);
-CREATE INDEX IF NOT EXISTS idx_video_responses_status ON video_responses(status);
+CREATE INDEX IF NOT EXISTS idx_profiles_search ON profiles 
+    USING gin(to_tsvector('english', name || ' ' || COALESCE(bio, '')));
 
 -- Testimonial indexes
-CREATE INDEX IF NOT EXISTS idx_testimonials_author_id ON testimonials(author_id);
-CREATE INDEX IF NOT EXISTS idx_testimonials_approved ON testimonials(approved);
-CREATE INDEX IF NOT EXISTS idx_testimonials_rating ON testimonials(rating);
+CREATE INDEX IF NOT EXISTS idx_testimonials_approved ON testimonials (approved, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_testimonials_author ON testimonials (author_id);
+CREATE INDEX IF NOT EXISTS idx_testimonials_rating ON testimonials (rating DESC);
 
 -- ================================================================
--- SECTION 14: INITIAL DATA SETUP
+-- SECTION 13: INITIAL DATA
 -- ================================================================
 
 -- Insert default subscription plans
 INSERT INTO subscription_plans (id, name, description, price, interval, role, features) VALUES
-('student-monthly', 'Student Monthly', 'Monthly access to all coaching features', 29.99, 'month', 'student', 
- '["Unlimited 1-on-1 sessions", "Access to live group sessions", "Course materials", "Community access"]'::jsonb),
-('student-yearly', 'Student Yearly', 'Yearly access to all coaching features', 299.99, 'year', 'student',
- '["Unlimited 1-on-1 sessions", "Access to live group sessions", "Course materials", "Community access", "2 months free"]'::jsonb),
-('coach-monthly', 'Coach Monthly', 'Monthly coaching platform access', 49.99, 'month', 'coach',
- '["Create unlimited sessions", "Host live sessions", "Video response templates", "Analytics dashboard"]'::jsonb),
-('coach-yearly', 'Coach Yearly', 'Yearly coaching platform access', 499.99, 'year', 'coach',
- '["Create unlimited sessions", "Host live sessions", "Video response templates", "Analytics dashboard", "2 months free"]'::jsonb)
+('student_monthly', 'Student Monthly', 'Access to all trading courses and basic features', 29.99, 'month', 'student', 
+ '["Access to all courses", "Community access", "Basic support"]'::jsonb),
+('student_yearly', 'Student Yearly', 'Access to all trading courses and basic features (yearly)', 299.99, 'year', 'student', 
+ '["Access to all courses", "Community access", "Basic support", "2 months free"]'::jsonb),
+('coach_monthly', 'Coach Monthly', 'Full coaching platform access', 99.99, 'month', 'coach', 
+ '["Create live sessions", "1-on-1 coaching", "Video responses", "Analytics dashboard", "Priority support"]'::jsonb),
+('coach_yearly', 'Coach Yearly', 'Full coaching platform access (yearly)', 999.99, 'year', 'coach', 
+ '["Create live sessions", "1-on-1 coaching", "Video responses", "Analytics dashboard", "Priority support", "2 months free"]'::jsonb)
 ON CONFLICT (id) DO NOTHING;
 
 -- Insert default blog categories
 INSERT INTO blog_categories (name, slug, description) VALUES
-('Trading Strategies', 'trading-strategies', 'Learn about different trading approaches and methodologies'),
-('Market Analysis', 'market-analysis', 'Deep dives into market trends and analysis techniques'),
-('Psychology', 'psychology', 'The mental game of trading and investment psychology'),
-('Risk Management', 'risk-management', 'Strategies for managing and minimizing trading risks'),
-('Technology', 'technology', 'Trading tools, platforms, and technological innovations'),
-('Education', 'education', 'Learning resources and educational content for traders')
+('Trading Basics', 'trading-basics', 'Fundamental concepts and principles of trading'),
+('Technical Analysis', 'technical-analysis', 'Chart patterns, indicators, and technical trading strategies'),
+('Risk Management', 'risk-management', 'Managing risk and protecting your capital'),
+('Market Psychology', 'market-psychology', 'Understanding emotions and psychology in trading'),
+('Cryptocurrency', 'cryptocurrency', 'Digital assets and crypto trading strategies'),
+('Forex', 'forex', 'Foreign exchange market insights and strategies'),
+('Stocks', 'stocks', 'Stock market analysis and investment strategies'),
+('News & Updates', 'news-updates', 'Latest market news and platform updates')
 ON CONFLICT (slug) DO NOTHING;
 
 -- Insert default blog tags
 INSERT INTO blog_tags (name, slug) VALUES
-('Beginner', 'beginner'),
-('Intermediate', 'intermediate'),
-('Advanced', 'advanced'),
-('Day Trading', 'day-trading'),
-('Swing Trading', 'swing-trading'),
-('Options', 'options'),
-('Forex', 'forex'),
-('Crypto', 'crypto'),
-('Technical Analysis', 'technical-analysis'),
-('Fundamental Analysis', 'fundamental-analysis')
+('beginner', 'beginner'),
+('intermediate', 'intermediate'),
+('advanced', 'advanced'),
+('strategy', 'strategy'),
+('analysis', 'analysis'),
+('psychology', 'psychology'),
+('risk', 'risk'),
+('profit', 'profit'),
+('loss', 'loss'),
+('momentum', 'momentum'),
+('swing-trading', 'swing-trading'),
+('day-trading', 'day-trading'),
+('scalping', 'scalping'),
+('long-term', 'long-term'),
+('technical', 'technical'),
+('fundamental', 'fundamental')
 ON CONFLICT (slug) DO NOTHING;
 
 -- ================================================================
--- SECTION 15: UTILITY VIEWS
+-- SECTION 14: UTILITY VIEWS
 -- ================================================================
 
--- View for complete user information
-CREATE OR REPLACE VIEW user_complete_profiles AS
+-- View for coach dashboard statistics
+CREATE OR REPLACE VIEW coach_dashboard_stats AS
 SELECT 
-    p.id,
+    cp.coach_id,  -- Change cp.id to cp.coach_id
     p.name,
     p.email,
-    p.role,
-    p.subscription_status,
-    up.bio,
-    up.website,
-    up.twitter,
-    up.linkedin,
-    up.avatar_url,
-    up.profile_complete,
-    us.notifications,
-    us.timezone,
-    us.language,
-    p.created_at,
-    p.updated_at
-FROM profiles p
-JOIN user_profiles up ON p.id = up.prof_id
-LEFT JOIN user_settings us ON p.id = us.id;
-
--- View for coach statistics
-CREATE OR REPLACE VIEW coach_statistics AS
-SELECT 
-    cp.coach_id,
-    p.name,
     cp.rating,
     cp.total_students,
     cp.earnings,
-    cp.hourly_rate,
     cp.verification_status,
     cp.subscription_active,
     COUNT(DISTINCT s.id) as total_sessions,
+    COUNT(DISTINCT CASE WHEN s.status = 'completed' THEN s.id END) as completed_sessions,
     COUNT(DISTINCT ls.id) as total_live_sessions,
-    COUNT(DISTINCT se.student_id) as enrolled_students
+    COUNT(DISTINCT se.student_id) as unique_students_taught,
+    AVG(CASE WHEN s.status = 'completed' THEN s.price END) as avg_session_price
 FROM coach_profiles cp
 JOIN profiles p ON cp.coach_id = p.id
 LEFT JOIN sessions s ON cp.coach_id = s.coach_id
 LEFT JOIN live_sessions ls ON cp.coach_id = ls.coach_id
-LEFT JOIN session_enrollments se ON ls.id = se.session_id
-GROUP BY cp.coach_id, p.name, cp.rating, cp.total_students, cp.earnings, 
-         cp.hourly_rate, cp.verification_status, cp.subscription_active;
+LEFT JOIN session_enrollments se ON ls.id = se.session_id AND se.status = 'attended'
+GROUP BY cp.coach_id, p.name, p.email, cp.rating, cp.total_students, cp.earnings, cp.verification_status, cp.subscription_active;
 
--- View for student progress
-CREATE OR REPLACE VIEW student_progress AS
+-- View for student dashboard statistics
+CREATE OR REPLACE VIEW student_dashboard_stats AS
 SELECT 
     sp.student_id,
     p.name,
+    p.email,
     sp.current_level,
     sp.tokens_earned,
-    array_length(sp.courses_completed, 1) as courses_completed_count,
-    COUNT(DISTINCT s.id) as total_sessions,
-    COUNT(DISTINCT se.session_id) as enrolled_live_sessions,
-    sp.selected_coach_id
+    sp.selected_path,
+    sp.selected_coach_id,
+    coach.name as coach_name,
+    COUNT(DISTINCT s.id) as total_sessions_booked,
+    COUNT(DISTINCT CASE WHEN s.status = 'completed' THEN s.id END) as completed_sessions,
+    COUNT(DISTINCT se.session_id) as live_sessions_attended,
+    COALESCE(SUM(CASE WHEN s.status = 'completed' THEN s.price END), 0) as total_spent
 FROM student_profiles sp
 JOIN profiles p ON sp.student_id = p.id
-LEFT JOIN sessions s ON sp.student_id = s.student_id
-LEFT JOIN session_enrollments se ON sp.student_id = se.student_id
-GROUP BY sp.student_id, p.name, sp.current_level, sp.tokens_earned, 
-         sp.courses_completed, sp.selected_coach_id;
+LEFT JOIN profiles coach ON sp.selected_coach_id = coach.id
+LEFT JOIN sessions s ON sp.Student_id = s.student_id
+LEFT JOIN session_enrollments se ON sp.student_id = se.student_id AND se.status = 'attended'
+GROUP BY sp.student_id, p.name, p.email, sp.current_level, sp.tokens_earned, sp.selected_path, sp.selected_coach_id, coach.name;
 
 -- View for upcoming sessions
 CREATE OR REPLACE VIEW upcoming_sessions AS
@@ -1196,86 +1226,143 @@ SELECT
     s.duration,
     s.status,
     s.price,
-    pc.name as coach_name,
-    ps.name as student_name,
+    coach.name as coach_name,
+    coach.avatar_url as coach_avatar,
+    student.name as student_name,
+    student.avatar_url as student_avatar,
     s.notes
 FROM sessions s
-JOIN profiles pc ON s.coach_id = pc.id
-JOIN profiles ps ON s.student_id = ps.id
-WHERE s.scheduled_time > NOW()
-    AND s.status = 'scheduled'
+JOIN profiles coach ON s.coach_id = coach.id
+JOIN profiles student ON s.student_id = student.id
+WHERE s.scheduled_time > now() AND s.status = 'scheduled'
 ORDER BY s.scheduled_time;
 
--- View for session analytics
-CREATE OR REPLACE VIEW session_analytics AS
+-- View for popular blog posts
+CREATE OR REPLACE VIEW popular_blog_posts AS
 SELECT 
-    DATE_TRUNC('month', s.scheduled_time) as month,
-    COUNT(*) as total_sessions,
-    COUNT(CASE WHEN s.status = 'completed' THEN 1 END) as completed_sessions,
-    COUNT(CASE WHEN s.status = 'cancelled' THEN 1 END) as cancelled_sessions,
-    AVG(s.price) as avg_price,
-    SUM(s.price) as total_revenue
-FROM sessions s
-GROUP BY DATE_TRUNC('month', s.scheduled_time)
-ORDER BY month DESC;
+    bp.id,
+    bp.title,
+    bp.slug,
+    bp.excerpt,
+    bp.featured_image_url,
+    bp.views_count,
+    bp.read_time,
+    bp.published_at,
+    p.name as author_name,
+    bc.name as category_name,
+    bc.slug as category_slug,
+    array_agg(DISTINCT bt.name) as tags
+FROM blog_posts bp
+JOIN profiles p ON bp.author_id = p.id
+LEFT JOIN blog_categories bc ON bp.category_id = bc.id
+LEFT JOIN blog_post_tags bpt ON bp.id = bpt.post_id
+LEFT JOIN blog_tags bt ON bpt.tag_id = bt.id
+WHERE bp.status = 'published'
+GROUP BY bp.id, bp.title, bp.slug, bp.excerpt, bp.featured_image_url, bp.views_count, bp.read_time, bp.published_at, p.name, bc.name, bc.slug
+ORDER BY bp.views_count DESC, bp.published_at DESC;
 
 -- ================================================================
--- SECTION 16: FINAL SETUP AND CLEANUP
+-- SECTION 15: BACKUP AND MAINTENANCE FUNCTIONS
 -- ================================================================
 
--- Run role-specific table population
-SELECT * FROM populate_role_specific_tables();
+-- Function to clean up old data
+CREATE OR REPLACE FUNCTION cleanup_old_data(days_to_keep integer DEFAULT 365)
+RETURNS TABLE(
+    deleted_sessions integer,
+    deleted_payments integer,
+    deleted_recordings integer
+) AS $$
+DECLARE
+    session_count integer := 0;
+    payment_count integer := 0;
+    recording_count integer := 0;
+BEGIN
+    -- Delete old completed sessions (keep for specified days)
+    WITH deleted_sessions AS (
+        DELETE FROM sessions 
+        WHERE status = 'completed' 
+        AND created_at < (now() - (days_to_keep || ' days')::interval)
+        RETURNING id
+    )
+    SELECT COUNT(*) INTO session_count FROM deleted_sessions;
 
--- Grant necessary permissions
-GRANT USAGE ON SCHEMA public TO authenticated, anon;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL ROUTINES IN SCHEMA public TO authenticated;
+    -- Delete old payment history (keep for specified days)
+    WITH deleted_payments AS (
+        DELETE FROM payment_history 
+        WHERE created_at < (now() - (days_to_keep || ' days')::interval)
+        RETURNING id
+    )
+    SELECT COUNT(*) INTO payment_count FROM deleted_payments;
 
--- Grant select on views
-GRANT SELECT ON user_complete_profiles TO authenticated;
-GRANT SELECT ON coach_statistics TO authenticated;
-GRANT SELECT ON student_progress TO authenticated;
-GRANT SELECT ON upcoming_sessions TO authenticated;
-GRANT SELECT ON session_analytics TO authenticated;
+    -- Delete old session recordings (keep for specified days)
+    WITH deleted_recordings AS (
+        DELETE FROM session_recordings sr
+        USING live_sessions ls
+        WHERE sr.session_id = ls.id
+        AND ls.status = 'completed'
+        AND sr.created_at < (now() - (days_to_keep || ' days')::interval)
+        RETURNING sr.id
+    )
+    SELECT COUNT(*) INTO recording_count FROM deleted_recordings;
 
--- Create storage bucket policies (if using Supabase Storage)
--- These would typically be set up through the Supabase dashboard or via SQL
- INSERT INTO storage.buckets (id, name, public) VALUES ('avatars', 'avatars', true);
- INSERT INTO storage.buckets (id, name, public) VALUES ('session-materials', 'session-materials', false);
- INSERT INTO storage.buckets (id, name, public) VALUES ('video-recordings', 'video-recordings', false);
+    RETURN QUERY SELECT session_count, payment_count, recording_count;
+END;
+$$ LANGUAGE plpgsql;
 
--- Final success message
+-- Function to generate platform statistics
+CREATE OR REPLACE FUNCTION get_platform_stats()
+RETURNS TABLE(
+    total_users integer,
+    total_coaches integer,
+    total_students integer,
+    verified_coaches integer,
+    active_subscriptions integer,
+    total_sessions integer,
+    total_live_sessions integer,
+    total_revenue numeric,
+    avg_coach_rating numeric
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        (SELECT COUNT(*)::integer FROM profiles),
+        (SELECT COUNT(*)::integer FROM profiles WHERE role = 'coach'),
+        (SELECT COUNT(*)::integer FROM profiles WHERE role = 'student'),
+        (SELECT COUNT(*)::integer FROM coach_profiles WHERE verification_status = 'verified'),
+        (SELECT COUNT(*)::integer FROM subscriptions WHERE status = 'active'),
+        (SELECT COUNT(*)::integer FROM sessions),
+        (SELECT COUNT(*)::integer FROM live_sessions),
+        (SELECT COALESCE(SUM(amount), 0) FROM payment_history WHERE status = 'succeeded'),
+        (SELECT ROUND(AVG(rating), 2) FROM coach_profiles WHERE rating > 0);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ================================================================
+-- SECTION 16: COMPLETION MESSAGE
+-- ================================================================
+
+-- Log successful completion
 DO $$
 BEGIN
-    RAISE NOTICE '========================================';
-    RAISE NOTICE 'iTradeCoach Database Schema Setup Complete!';
-    RAISE NOTICE '========================================';
-    RAISE NOTICE 'Tables created: %', (
-        SELECT COUNT(*) 
-        FROM information_schema.tables 
+    RAISE NOTICE 'iTradeCoach database schema created successfully!';
+    RAISE NOTICE 'Total tables created: %', (
+        SELECT COUNT(*) FROM information_schema.tables 
         WHERE table_schema = 'public' 
         AND table_type = 'BASE TABLE'
     );
-    RAISE NOTICE 'Functions created: %', (
-        SELECT COUNT(*) 
-        FROM information_schema.routines 
-        WHERE routine_schema = 'public'
+    RAISE NOTICE 'Total functions created: %', (
+        SELECT COUNT(*) FROM information_schema.routines 
+        WHERE routine_schema = 'public' 
+        AND routine_type = 'FUNCTION'
     );
-    RAISE NOTICE 'Triggers created: %', (
-        SELECT COUNT(*) 
-        FROM information_schema.triggers 
-        WHERE trigger_schema = 'public'
-    );
-    RAISE NOTICE 'Views created: %', (
-        SELECT COUNT(*) 
-        FROM information_schema.views 
+    RAISE NOTICE 'Total views created: %', (
+        SELECT COUNT(*) FROM information_schema.views 
         WHERE table_schema = 'public'
     );
-    RAISE NOTICE '========================================';
-    RAISE NOTICE 'Database is ready for use!';
-    RAISE NOTICE '========================================';
 END $$;
+
+-- Final verification - populate role-specific tables for existing users
+SELECT * FROM populate_role_specific_tables();
 
 -- ================================================================
 -- END OF SCHEMA
