@@ -354,6 +354,8 @@ CREATE TABLE IF NOT EXISTS blog_comments (
 -- Courses
 CREATE TABLE IF NOT EXISTS courses (
     id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    student_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    coach_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     title text NOT NULL,
     description text,
     is_hidden boolean DEFAULT false,
@@ -451,9 +453,8 @@ BEGIN
     INSERT INTO public.profiles (id, email, name, role)
     VALUES (NEW.id, NEW.email, user_name, user_role_value);
 
-    -- Create default user settings
-    INSERT INTO public.user_settings (id)
-    VALUES (NEW.id);
+    -- REMOVE OR COMMENT OUT THIS LINE:
+    -- INSERT INTO public.user_settings (id) VALUES (NEW.id);
 
     RETURN NEW;
 EXCEPTION
@@ -462,6 +463,8 @@ EXCEPTION
         RAISE;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
 
 -- Populate role-specific tables
 CREATE OR REPLACE FUNCTION populate_role_specific_tables()
@@ -616,7 +619,7 @@ $$ LANGUAGE plpgsql;
 -- Core triggers
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 CREATE TRIGGER handle_role_change_trigger
     AFTER UPDATE OF role ON profiles
