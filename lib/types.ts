@@ -1,649 +1,1471 @@
-// ================================================================
-// iTradeCoach Complete TypeScript Types
-// ================================================================
-// 
-// This file provides complete TypeScript types for the iTradeCoach platform
-// Matches the PostgreSQL schema with Supabase extensions
-// 
-// Generated: 2025
-// ================================================================
-
-// ================================================================
-// SECTION 1: ENUMS AND UNION TYPES
-// ================================================================
-
-export type UserRole = 'student' | 'coach' | 'admin';
-export type VerificationStatus = 'pending' | 'verified' | 'rejected';
-export type SessionStatus = 'scheduled' | 'completed' | 'cancelled';
-export type StudentLevel = 'beginner' | 'intermediate' | 'advanced';
-export type SubscriptionStatus = 'none' | 'active' | 'past_due' | 'canceled';
-export type PaymentStatus = 'succeeded' | 'failed' | 'pending';
-export type BlogPostStatus = 'draft' | 'published' | 'archived';
-export type CommentStatus = 'pending' | 'approved' | 'rejected';
-export type FileType = 'pdf' | 'video' | 'audio' | 'document' | 'link';
-export type AvailabilityStatus = 'available' | 'busy' | 'maybe';
-export type LiveSessionStatus = 'scheduled' | 'live' | 'completed' | 'cancelled';
-export type EnrollmentStatus = 'enrolled' | 'attended' | 'missed' | 'cancelled';
-export type UploadStatus = 'processing' | 'ready' | 'failed';
-export type VideoResponseStatus = 'processing' | 'completed' | 'failed';
-export type SessionRequestStatus = 'pending' | 'approved' | 'rejected' | 'scheduled';
-export type SubscriptionInterval = 'month' | 'year';
-export type Currency = 'USD';
-
-// ================================================================
-// SECTION 2: BASE INTERFACES
-// ================================================================
-
-export interface BaseTimestamps {
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BaseEntity extends BaseTimestamps {
-  id: string;
-}
-
-// ================================================================
-// SECTION 3: USER TYPES
-// ================================================================
-
-export interface Profile {
-  id: string;
-  name: string | null;
-  role: UserRole | null;
-  email: string | null;
-  subscription_status: SubscriptionStatus;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface UserProfile extends BaseTimestamps {
-  prof_id: string;
-  bio: string | null;
-  website: string | null;
-  twitter: string | null;
-  linkedin: string | null;
-  avatar_url: string | null;
-  profile_complete: boolean;
-}
-
-export interface UserSettings extends BaseTimestamps {
-  id: string;
-  prof_id: string | null;
-  notifications: NotificationSettings;
-  timezone: string;
-  language: string;
-}
-
-export interface NotificationSettings {
-  email: boolean;
-  push: boolean;
-  marketing: boolean;
-}
-
-export interface CoachProfile extends BaseTimestamps {
-  coach_id: string;
-  expertise_areas: string[];
-  hourly_rate: number;
-  video_intro_url: string | null;
-  verification_status: VerificationStatus;
-  algorand_wallet: string | null;
-  rating: number;
-  total_students: number;
-  earnings: number;
-  subscription_required: boolean;
-  subscription_active: boolean;
-}
-
-export interface StudentProfile extends BaseTimestamps {
-  student_id: string;
-  learning_goals: string[];
-  current_level: StudentLevel;
-  tokens_earned: number;
-  courses_completed: string[];
-  selected_path: string | null;
-  selected_coach_id: string | null;
-  subscription_required: boolean;
-}
-
-// ================================================================
-// SECTION 4: SUBSCRIPTION TYPES
-// ================================================================
-
-export interface SubscriptionPlan {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number;
-  interval: SubscriptionInterval;
-  role: UserRole;
-  features: string[];
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Subscription extends BaseTimestamps {
-  id: string;
-  prof_id: string | null;
-  plan_id: string | null;
-  status: SubscriptionStatus;
-  current_period_start: string;
-  current_period_end: string;
-  cancel_at_period_end: boolean;
-}
-
-export interface PaymentHistory {
-  id: string;
-  subscription_id: string | null;
-  prof_id: string | null;
-  amount: number;
-  currency: Currency;
-  status: PaymentStatus;
-  payment_method: string | null;
-  created_at: string;
-}
-
-// ================================================================
-// SECTION 5: SESSION TYPES
-// ================================================================
-
-export interface Session extends BaseTimestamps {
-  id: string;
-  coach_id: string;
-  student_id: string;
-  scheduled_time: string;
-  duration: number;
-  status: SessionStatus;
-  price: number;
-  notes: string | null;
-}
-
-export interface SessionRequest extends BaseTimestamps {
-  id: string;
-  coach_id: string;
-  student_id: string;
-  preferred_time: string;
-  duration: number;
-  topic: string;
-  message: string;
-  learning_goals: string | null;
-  status: SessionRequestStatus;
-  coach_response: string | null;
-}
-
-export interface CoachAvailability extends BaseTimestamps {
-  id: string;
-  coach_id: string;
-  day_of_week: number; // 0-6, Sunday to Saturday
-  start_time: string; // HH:MM format
-  end_time: string; // HH:MM format
-  status: AvailabilityStatus;
-  notes: string | null;
-  is_recurring: boolean;
-  specific_date: string | null; // YYYY-MM-DD format
-}
-
-// ================================================================
-// SECTION 6: LIVE SESSION TYPES
-// ================================================================
-
-export interface LiveSession extends BaseTimestamps {
-  id: string;
-  coach_id: string;
-  title: string;
-  description: string;
-  learning_path: StudentLevel;
-  scheduled_time: string;
-  duration: number;
-  max_participants: number;
-  current_participants: number;
-  price: number;
-  status: LiveSessionStatus;
-  meeting_url: string | null;
-  recording_url: string | null;
-}
-
-export interface SessionEnrollment extends BaseTimestamps {
-  id: string;
-  session_id: string;
-  student_id: string;
-  enrolled_at: string;
-  status: EnrollmentStatus;
-}
-
-export interface SessionRecording {
-  id: string;
-  session_id: string;
-  recording_url: string;
-  duration: number | null;
-  file_size: number | null;
-  upload_status: UploadStatus;
-  created_at: string;
-}
-
-export interface LiveSessionFeedback {
-  id: string;
-  live_session_id: string;
-  student_id: string;
-  rating: number; // 1-5
-  feedback_text: string | null;
-  created_at: string;
-}
-
-export interface SessionMaterial {
-  id: string;
-  session_id: string | null;
-  live_session_id: string | null;
-  title: string;
-  description: string | null;
-  file_url: string;
-  file_type: FileType;
-  uploaded_by: string;
-  created_at: string;
-}
-
-// ================================================================
-// SECTION 7: VIDEO SYSTEM TYPES
-// ================================================================
-
-export interface VideoTemplate extends BaseTimestamps {
-  id: string;
-  coach_id: string;
-  tavus_template_id: string;
-  name: string;
-  description: string | null;
-  script: string;
-}
-
-export interface VideoResponse extends BaseTimestamps {
-  id: string;
-  template_id: string;
-  coach_id: string;
-  student_id: string;
-  tavus_video_id: string;
-  status: VideoResponseStatus;
-  url: string | null;
-}
-
-// ================================================================
-// SECTION 8: BLOG TYPES
-// ================================================================
-
-export interface BlogCategory extends BaseTimestamps {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-}
-
-export interface BlogTag {
-  id: string;
-  name: string;
-  slug: string;
-  created_at: string;
-}
-
-export interface BlogPost extends BaseTimestamps {
-  id: string;
-  title: string;
-  slug: string;
-  excerpt: string | null;
-  content: string;
-  featured_image_url: string | null;
-  author_id: string;
-  category_id: string | null;
-  status: BlogPostStatus;
-  featured: boolean;
-  read_time: number;
-  views_count: number;
-  published_at: string | null;
-}
-
-export interface BlogPostTag {
-  id: string;
-  post_id: string;
-  tag_id: string;
-  created_at: string;
-}
-
-export interface BlogComment extends BaseTimestamps {
-  id: string;
-  post_id: string;
-  author_id: string;
-  content: string;
-  status: CommentStatus;
-}
-
-// ================================================================
-// SECTION 9: COURSE AND TESTIMONIAL TYPES
-// ================================================================
-
-export interface Course extends BaseTimestamps {
-  id: number;
-  student_id: string;
-  coach_id: string;
-  title: string;
-  description: string | null;
-  is_hidden: boolean;
-}
-
-export interface Testimonial extends BaseTimestamps {
-  id: string;
-  text: string;
-  author_id: string;
-  author_name: string;
-  author_title: string;
-  rating: number; // 1-5
-  approved: boolean;
-}
-
-// ================================================================
-// SECTION 10: VIEW TYPES (For analytics and aggregated data)
-// ================================================================
-
-export interface UserCompleteProfile {
-  id: string;
-  name: string | null;
-  email: string | null;
-  role: UserRole | null;
-  subscription_status: SubscriptionStatus;
-  bio: string | null;
-  website: string | null;
-  twitter: string | null;
-  linkedin: string | null;
-  avatar_url: string | null;
-  profile_complete: boolean;
-  notifications: NotificationSettings;
-  timezone: string;
-  language: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface CoachStatistics {
-  coach_id: string;
-  name: string | null;
-  rating: number;
-  total_students: number;
-  earnings: number;
-  hourly_rate: number;
-  verification_status: VerificationStatus;
-  subscription_active: boolean;
-  total_sessions: number;
-  total_live_sessions: number;
-  enrolled_students: number;
-}
-
-export interface StudentProgress {
-  student_id: string;
-  name: string | null;
-  current_level: StudentLevel;
-  tokens_earned: number;
-  courses_completed_count: number;
-  total_sessions: number;
-  enrolled_live_sessions: number;
-  selected_coach_id: string | null;
-}
-
-export interface UpcomingSession {
-  id: string;
-  scheduled_time: string;
-  duration: number;
-  status: SessionStatus;
-  price: number;
-  coach_name: string | null;
-  student_name: string | null;
-  notes: string | null;
-}
-
-export interface SessionAnalytics {
-  month: string;
-  total_sessions: number;
-  completed_sessions: number;
-  cancelled_sessions: number;
-  avg_price: number;
-  total_revenue: number;
-}
-
-// ================================================================
-// SECTION 11: API RESPONSE TYPES
-// ================================================================
-
-export interface ApiResponse<T> {
-  data: T | null;
-  error: string | null;
-  success: boolean;
-}
-
-export interface PaginatedResponse<T> {
-  data: T[];
-  count: number;
-  page: number;
-  limit: number;
-  total_pages: number;
-}
-
-// ================================================================
-// SECTION 12: FORM TYPES
-// ================================================================
-
-export interface CreateSessionRequest {
-  coach_id: string;
-  preferred_time: string;
-  duration: number;
-  topic: string;
-  message: string;
-  learning_goals?: string;
-}
-
-export interface UpdateProfileRequest {
-  name?: string;
-  bio?: string;
-  website?: string;
-  twitter?: string;
-  linkedin?: string;
-  avatar_url?: string;
-}
-
-export interface CreateLiveSessionRequest {
-  title: string;
-  description: string;
-  learning_path: StudentLevel;
-  scheduled_time: string;
-  duration: number;
-  max_participants: number;
-  price: number;
-}
-
-export interface CreateBlogPostRequest {
-  title: string;
-  content: string;
-  excerpt?: string;
-  featured_image_url?: string;
-  category_id?: string;
-  tag_ids?: string[];
-  status?: BlogPostStatus;
-  featured?: boolean;
-}
-
-export interface CreateTestimonialRequest {
-  text: string;
-  author_name: string;
-  author_title: string;
-  rating: number;
-}
-
-// ================================================================
-// SECTION 13: FILTER AND QUERY TYPES
-// ================================================================
-
-export interface SessionFilters {
-  coach_id?: string;
-  student_id?: string;
-  status?: SessionStatus;
-  date_from?: string;
-  date_to?: string;
-}
-
-export interface CoachFilters {
-  expertise_areas?: string[];
-  hourly_rate_min?: number;
-  hourly_rate_max?: number;
-  rating_min?: number;
-  verification_status?: VerificationStatus;
-  subscription_active?: boolean;
-}
-
-export interface BlogPostFilters {
-  category_id?: string;
-  tag_ids?: string[];
-  author_id?: string;
-  status?: BlogPostStatus;
-  featured?: boolean;
-  search?: string;
-}
-
-export interface LiveSessionFilters {
-  coach_id?: string;
-  learning_path?: StudentLevel;
-  status?: LiveSessionStatus;
-  date_from?: string;
-  date_to?: string;
-  available_spots?: boolean;
-}
-
-// ================================================================
-// SECTION 14: UTILITY TYPES
-// ================================================================
-
-export type DatabaseTables = 
-  | 'profiles'
-  | 'user_profiles'
-  | 'coach_profiles'
-  | 'student_profiles'
-  | 'subscription_plans'
-  | 'subscriptions'
-  | 'payment_history'
-  | 'sessions'
-  | 'session_requests'
-  | 'coach_availability'
-  | 'live_sessions'
-  | 'session_enrollments'
-  | 'session_recordings'
-  | 'live_session_feedback'
-  | 'session_materials'
-  | 'video_templates'
-  | 'video_responses'
-  | 'blog_categories'
-  | 'blog_tags'
-  | 'blog_posts'
-  | 'blog_post_tags'
-  | 'blog_comments'
-  | 'courses'
-  | 'testimonials'
-  | 'user_settings';
-
-// Helper types for creating and updating records
-export type CreateRecord<T> = Omit<T, 'id' | 'created_at' | 'updated_at'>;
-export type UpdateRecord<T> = Partial<Omit<T, 'id' | 'created_at' | 'updated_at'>>;
-
-// Role-specific user types
-export type CoachUser = Profile & {
-  role: 'coach';
-  coach_profile?: CoachProfile;
-};
-
-export type StudentUser = Profile & {
-  role: 'student';
-  student_profile?: StudentProfile;
-};
-
-export type AdminUser = Profile & {
-  role: 'admin';
-};
-
-// ================================================================
-// SECTION 15: SUPABASE SPECIFIC TYPES
-// ================================================================
-
-export interface Database {
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
   public: {
     Tables: {
-      profiles: {
-        Row: Profile;
-        Insert: CreateRecord<Profile>;
-        Update: UpdateRecord<Profile>;
-      };
-      user_profiles: {
-        Row: UserProfile;
-        Insert: CreateRecord<UserProfile>;
-        Update: UpdateRecord<UserProfile>;
-      };
-      coach_profiles: {
-        Row: CoachProfile;
-        Insert: CreateRecord<CoachProfile>;
-        Update: UpdateRecord<CoachProfile>;
-      };
-      student_profiles: {
-        Row: StudentProfile;
-        Insert: CreateRecord<StudentProfile>;
-        Update: UpdateRecord<StudentProfile>;
-      };
-      sessions: {
-        Row: Session;
-        Insert: CreateRecord<Session>;
-        Update: UpdateRecord<Session>;
-      };
-      live_sessions: {
-        Row: LiveSession;
-        Insert: CreateRecord<LiveSession>;
-        Update: UpdateRecord<LiveSession>;
-      };
+      blog_categories: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      blog_comments: {
+        Row: {
+          author_id: string
+          content: string
+          created_at: string
+          id: string
+          post_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          author_id: string
+          content: string
+          created_at?: string
+          id?: string
+          post_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string
+          content?: string
+          created_at?: string
+          id?: string
+          post_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blog_comments_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+          {
+            foreignKeyName: "blog_comments_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "blog_posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blog_post_tags: {
+        Row: {
+          created_at: string
+          id: string
+          post_id: string
+          tag_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          post_id: string
+          tag_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          post_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blog_post_tags_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "blog_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blog_post_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "blog_tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       blog_posts: {
-        Row: BlogPost;
-        Insert: CreateRecord<BlogPost>;
-        Update: UpdateRecord<BlogPost>;
-      };
-      // Add other tables as needed...
-    };
+        Row: {
+          author_id: string
+          category_id: string | null
+          content: string
+          created_at: string
+          excerpt: string | null
+          featured: boolean
+          featured_image_url: string | null
+          id: string
+          published_at: string | null
+          read_time: number | null
+          slug: string
+          status: string
+          title: string
+          updated_at: string
+          views_count: number | null
+        }
+        Insert: {
+          author_id: string
+          category_id?: string | null
+          content: string
+          created_at?: string
+          excerpt?: string | null
+          featured?: boolean
+          featured_image_url?: string | null
+          id?: string
+          published_at?: string | null
+          read_time?: number | null
+          slug: string
+          status?: string
+          title: string
+          updated_at?: string
+          views_count?: number | null
+        }
+        Update: {
+          author_id?: string
+          category_id?: string | null
+          content?: string
+          created_at?: string
+          excerpt?: string | null
+          featured?: boolean
+          featured_image_url?: string | null
+          id?: string
+          published_at?: string | null
+          read_time?: number | null
+          slug?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          views_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blog_posts_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+          {
+            foreignKeyName: "blog_posts_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "blog_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      blog_tags: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          slug: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          slug: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          slug?: string
+        }
+        Relationships: []
+      }
+      coach_availability: {
+        Row: {
+          coach_id: string
+          created_at: string
+          day_of_week: number
+          end_time: string
+          id: string
+          is_recurring: boolean
+          notes: string | null
+          specific_date: string | null
+          start_time: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          day_of_week: number
+          end_time: string
+          id?: string
+          is_recurring?: boolean
+          notes?: string | null
+          specific_date?: string | null
+          start_time: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          day_of_week?: number
+          end_time?: string
+          id?: string
+          is_recurring?: boolean
+          notes?: string | null
+          specific_date?: string | null
+          start_time?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_availability_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "coach_availability_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+        ]
+      }
+      coach_profiles: {
+        Row: {
+          algorand_wallet: string | null
+          coach_id: string
+          created_at: string
+          earnings: number | null
+          expertise_areas: string[] | null
+          hourly_rate: number | null
+          rating: number | null
+          subscription_active: boolean | null
+          subscription_required: boolean | null
+          total_students: number | null
+          updated_at: string
+          verification_status:
+            | Database["public"]["Enums"]["verification_status"]
+            | null
+          video_intro_url: string | null
+        }
+        Insert: {
+          algorand_wallet?: string | null
+          coach_id: string
+          created_at?: string
+          earnings?: number | null
+          expertise_areas?: string[] | null
+          hourly_rate?: number | null
+          rating?: number | null
+          subscription_active?: boolean | null
+          subscription_required?: boolean | null
+          total_students?: number | null
+          updated_at?: string
+          verification_status?:
+            | Database["public"]["Enums"]["verification_status"]
+            | null
+          video_intro_url?: string | null
+        }
+        Update: {
+          algorand_wallet?: string | null
+          coach_id?: string
+          created_at?: string
+          earnings?: number | null
+          expertise_areas?: string[] | null
+          hourly_rate?: number | null
+          rating?: number | null
+          subscription_active?: boolean | null
+          subscription_required?: boolean | null
+          total_students?: number | null
+          updated_at?: string
+          verification_status?:
+            | Database["public"]["Enums"]["verification_status"]
+            | null
+          video_intro_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_profiles_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: true
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+        ]
+      }
+      courses: {
+        Row: {
+          coach_id: string
+          created_at: string
+          description: string | null
+          id: number
+          is_hidden: boolean | null
+          student_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          description?: string | null
+          id?: never
+          is_hidden?: boolean | null
+          student_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          description?: string | null
+          id?: never
+          is_hidden?: boolean | null
+          student_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courses_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "courses_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "courses_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_profiles"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "courses_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_progress"
+            referencedColumns: ["student_id"]
+          },
+        ]
+      }
+      live_session_feedback: {
+        Row: {
+          created_at: string
+          feedback_text: string | null
+          id: string
+          live_session_id: string
+          rating: number
+          student_id: string
+        }
+        Insert: {
+          created_at?: string
+          feedback_text?: string | null
+          id?: string
+          live_session_id: string
+          rating: number
+          student_id: string
+        }
+        Update: {
+          created_at?: string
+          feedback_text?: string | null
+          id?: string
+          live_session_id?: string
+          rating?: number
+          student_id?: string
+        }
+        Relationships: []
+      }
+      live_sessions: {
+        Row: {
+          coach_id: string
+          created_at: string
+          current_participants: number
+          description: string
+          duration: number
+          id: string
+          learning_path: string
+          max_participants: number
+          meeting_url: string | null
+          price: number
+          recording_url: string | null
+          scheduled_time: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          current_participants?: number
+          description: string
+          duration: number
+          id?: string
+          learning_path: string
+          max_participants?: number
+          meeting_url?: string | null
+          price?: number
+          recording_url?: string | null
+          scheduled_time: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          current_participants?: number
+          description?: string
+          duration?: number
+          id?: string
+          learning_path?: string
+          max_participants?: number
+          meeting_url?: string | null
+          price?: number
+          recording_url?: string | null
+          scheduled_time?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "live_sessions_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "live_sessions_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+        ]
+      }
+      payment_history: {
+        Row: {
+          amount: number
+          created_at: string | null
+          currency: string | null
+          id: string
+          payment_method: string | null
+          prof_id: string | null
+          status: string
+          subscription_id: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          currency?: string | null
+          id?: string
+          payment_method?: string | null
+          prof_id?: string | null
+          status: string
+          subscription_id?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          currency?: string | null
+          id?: string
+          payment_method?: string | null
+          prof_id?: string | null
+          status?: string
+          subscription_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_history_prof_id_fkey"
+            columns: ["prof_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+          {
+            foreignKeyName: "payment_history_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          id: string
+          name: string | null
+          role: string | null
+          subscription_status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          name?: string | null
+          role?: string | null
+          subscription_status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          name?: string | null
+          role?: string | null
+          subscription_status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      session_enrollments: {
+        Row: {
+          created_at: string
+          enrolled_at: string
+          id: string
+          session_id: string
+          status: string
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          enrolled_at?: string
+          id?: string
+          session_id: string
+          status?: string
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          enrolled_at?: string
+          id?: string
+          session_id?: string
+          status?: string
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_enrollments_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_profiles"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "session_enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_progress"
+            referencedColumns: ["student_id"]
+          },
+        ]
+      }
+      session_materials: {
+        Row: {
+          created_at: string
+          description: string | null
+          file_type: string
+          file_url: string
+          id: string
+          live_session_id: string | null
+          session_id: string | null
+          title: string
+          uploaded_by: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          file_type: string
+          file_url: string
+          id?: string
+          live_session_id?: string | null
+          session_id?: string | null
+          title: string
+          uploaded_by: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          file_type?: string
+          file_url?: string
+          id?: string
+          live_session_id?: string | null
+          session_id?: string | null
+          title?: string
+          uploaded_by?: string
+        }
+        Relationships: []
+      }
+      session_recordings: {
+        Row: {
+          created_at: string
+          duration: number | null
+          file_size: number | null
+          id: string
+          recording_url: string
+          session_id: string
+          upload_status: string
+        }
+        Insert: {
+          created_at?: string
+          duration?: number | null
+          file_size?: number | null
+          id?: string
+          recording_url: string
+          session_id: string
+          upload_status?: string
+        }
+        Update: {
+          created_at?: string
+          duration?: number | null
+          file_size?: number | null
+          id?: string
+          recording_url?: string
+          session_id?: string
+          upload_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_recordings_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_requests: {
+        Row: {
+          coach_id: string
+          coach_response: string | null
+          created_at: string
+          duration: number
+          id: string
+          learning_goals: string | null
+          message: string
+          preferred_time: string
+          status: string
+          student_id: string
+          topic: string
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          coach_response?: string | null
+          created_at?: string
+          duration: number
+          id?: string
+          learning_goals?: string | null
+          message: string
+          preferred_time: string
+          status?: string
+          student_id: string
+          topic: string
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          coach_response?: string | null
+          created_at?: string
+          duration?: number
+          id?: string
+          learning_goals?: string | null
+          message?: string
+          preferred_time?: string
+          status?: string
+          student_id?: string
+          topic?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_requests_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "session_requests_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "session_requests_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_profiles"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "session_requests_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_progress"
+            referencedColumns: ["student_id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          coach_id: string
+          created_at: string
+          duration: number
+          id: string
+          notes: string | null
+          price: number | null
+          scheduled_time: string
+          status: Database["public"]["Enums"]["session_status"] | null
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          duration?: number
+          id?: string
+          notes?: string | null
+          price?: number | null
+          scheduled_time: string
+          status?: Database["public"]["Enums"]["session_status"] | null
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          duration?: number
+          id?: string
+          notes?: string | null
+          price?: number | null
+          scheduled_time?: string
+          status?: Database["public"]["Enums"]["session_status"] | null
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "sessions_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "sessions_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_profiles"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "sessions_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_progress"
+            referencedColumns: ["student_id"]
+          },
+        ]
+      }
+      student_profiles: {
+        Row: {
+          courses_completed: string[] | null
+          created_at: string
+          current_level: Database["public"]["Enums"]["student_level"] | null
+          learning_goals: string[] | null
+          selected_coach_id: string | null
+          selected_path: string | null
+          student_id: string
+          subscription_required: boolean | null
+          tokens_earned: number | null
+          updated_at: string
+        }
+        Insert: {
+          courses_completed?: string[] | null
+          created_at?: string
+          current_level?: Database["public"]["Enums"]["student_level"] | null
+          learning_goals?: string[] | null
+          selected_coach_id?: string | null
+          selected_path?: string | null
+          student_id: string
+          subscription_required?: boolean | null
+          tokens_earned?: number | null
+          updated_at?: string
+        }
+        Update: {
+          courses_completed?: string[] | null
+          created_at?: string
+          current_level?: Database["public"]["Enums"]["student_level"] | null
+          learning_goals?: string[] | null
+          selected_coach_id?: string | null
+          selected_path?: string | null
+          student_id?: string
+          subscription_required?: boolean | null
+          tokens_earned?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_profiles_selected_coach_id_fkey"
+            columns: ["selected_coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "student_profiles_selected_coach_id_fkey"
+            columns: ["selected_coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "student_profiles_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: true
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+        ]
+      }
+      subscription_plans: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          features: Json | null
+          id: string
+          interval: string
+          name: string
+          price: number
+          role: Database["public"]["Enums"]["user_role"]
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          features?: Json | null
+          id: string
+          interval: string
+          name: string
+          price: number
+          role: Database["public"]["Enums"]["user_role"]
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          features?: Json | null
+          id?: string
+          interval?: string
+          name?: string
+          price?: number
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          cancel_at_period_end: boolean | null
+          created_at: string | null
+          current_period_end: string
+          current_period_start: string
+          id: string
+          plan_id: string | null
+          prof_id: string | null
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          cancel_at_period_end?: boolean | null
+          created_at?: string | null
+          current_period_end: string
+          current_period_start: string
+          id?: string
+          plan_id?: string | null
+          prof_id?: string | null
+          status: string
+          updated_at?: string | null
+        }
+        Update: {
+          cancel_at_period_end?: boolean | null
+          created_at?: string | null
+          current_period_end?: string
+          current_period_start?: string
+          id?: string
+          plan_id?: string | null
+          prof_id?: string | null
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "subscription_plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_prof_id_fkey"
+            columns: ["prof_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+        ]
+      }
+      testimonials: {
+        Row: {
+          approved: boolean | null
+          author_id: string
+          author_name: string
+          author_title: string
+          created_at: string
+          id: string
+          rating: number
+          text: string
+          updated_at: string
+        }
+        Insert: {
+          approved?: boolean | null
+          author_id: string
+          author_name: string
+          author_title: string
+          created_at?: string
+          id?: string
+          rating: number
+          text: string
+          updated_at?: string
+        }
+        Update: {
+          approved?: boolean | null
+          author_id?: string
+          author_name?: string
+          author_title?: string
+          created_at?: string
+          id?: string
+          rating?: number
+          text?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "testimonials_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+        ]
+      }
+      user_profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          created_at: string
+          linkedin: string | null
+          prof_id: string
+          profile_complete: boolean
+          twitter: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string
+          linkedin?: string | null
+          prof_id: string
+          profile_complete?: boolean
+          twitter?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          bio?: string | null
+          created_at?: string
+          linkedin?: string | null
+          prof_id?: string
+          profile_complete?: boolean
+          twitter?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          created_at: string
+          id: string
+          language: string | null
+          notifications: Json | null
+          prof_id: string | null
+          timezone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          language?: string | null
+          notifications?: Json | null
+          prof_id?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          language?: string | null
+          notifications?: Json | null
+          prof_id?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_settings_prof_id_fkey"
+            columns: ["prof_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+        ]
+      }
+      video_responses: {
+        Row: {
+          coach_id: string
+          created_at: string
+          id: string
+          status: string
+          student_id: string
+          tavus_video_id: string
+          template_id: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          id?: string
+          status?: string
+          student_id: string
+          tavus_video_id: string
+          template_id: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          id?: string
+          status?: string
+          student_id?: string
+          tavus_video_id?: string
+          template_id?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_responses_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "video_responses_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "video_responses_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_profiles"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "video_responses_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_progress"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "video_responses_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "video_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      video_templates: {
+        Row: {
+          coach_id: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          script: string
+          tavus_template_id: string
+          updated_at: string
+        }
+        Insert: {
+          coach_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          script: string
+          tavus_template_id: string
+          updated_at?: string
+        }
+        Update: {
+          coach_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          script?: string
+          tavus_template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_templates_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "video_templates_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+        ]
+      }
+    }
     Views: {
-      user_complete_profiles: {
-        Row: UserCompleteProfile;
-      };
       coach_statistics: {
-        Row: CoachStatistics;
-      };
-      student_progress: {
-        Row: StudentProgress;
-      };
-      upcoming_sessions: {
-        Row: UpcomingSession;
-      };
+        Row: {
+          coach_id: string | null
+          earnings: number | null
+          enrolled_students: number | null
+          hourly_rate: number | null
+          name: string | null
+          rating: number | null
+          subscription_active: boolean | null
+          total_live_sessions: number | null
+          total_sessions: number | null
+          total_students: number | null
+          verification_status:
+            | Database["public"]["Enums"]["verification_status"]
+            | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_profiles_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: true
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+        ]
+      }
       session_analytics: {
-        Row: SessionAnalytics;
-      };
-    };
+        Row: {
+          avg_price: number | null
+          cancelled_sessions: number | null
+          completed_sessions: number | null
+          month: string | null
+          total_revenue: number | null
+          total_sessions: number | null
+        }
+        Relationships: []
+      }
+      student_progress: {
+        Row: {
+          courses_completed_count: number | null
+          current_level: Database["public"]["Enums"]["student_level"] | null
+          enrolled_live_sessions: number | null
+          name: string | null
+          selected_coach_id: string | null
+          student_id: string | null
+          tokens_earned: number | null
+          total_sessions: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_profiles_selected_coach_id_fkey"
+            columns: ["selected_coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "student_profiles_selected_coach_id_fkey"
+            columns: ["selected_coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "student_profiles_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: true
+            referencedRelation: "user_profiles"
+            referencedColumns: ["prof_id"]
+          },
+        ]
+      }
+      upcoming_sessions: {
+        Row: {
+          coach_name: string | null
+          duration: number | null
+          id: string | null
+          notes: string | null
+          price: number | null
+          scheduled_time: string | null
+          status: Database["public"]["Enums"]["session_status"] | null
+          student_name: string | null
+        }
+        Relationships: []
+      }
+      user_complete_profiles: {
+        Row: {
+          avatar_url: string | null
+          bio: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          language: string | null
+          linkedin: string | null
+          name: string | null
+          notifications: Json | null
+          profile_complete: boolean | null
+          role: string | null
+          subscription_status: string | null
+          timezone: string | null
+          twitter: string | null
+          updated_at: string | null
+          website: string | null
+        }
+        Relationships: []
+      }
+    }
     Functions: {
+      calculate_read_time: {
+        Args: { content: string }
+        Returns: number
+      }
+      generate_slug: {
+        Args: { title: string }
+        Returns: string
+      }
       populate_role_specific_tables: {
-        Args: Record<PropertyKey, never>;
+        Args: Record<PropertyKey, never>
         Returns: {
-          students_added: number;
-          coaches_added: number;
-        };
-      };
-    };
+          students_added: number
+          coaches_added: number
+        }[]
+      }
+    }
     Enums: {
-      user_role: UserRole;
-      verification_status: VerificationStatus;
-      session_status: SessionStatus;
-      student_level: StudentLevel;
-    };
-  };
+      session_status: "scheduled" | "completed" | "cancelled"
+      student_level: "beginner" | "intermediate" | "advanced"
+      user_role: "student" | "coach" | "admin"
+      verification_status: "pending" | "verified" | "rejected"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
 }
 
-// Export the Database type for use with Supabase client
-export type SupabaseDatabase = Database;
+type DefaultSchema = Database[Extract<keyof Database, "public">]
 
-// ================================================================
-// END OF TYPES
-// ================================================================
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof Database },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof (Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
+  ? Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
+  ? Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof Database },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof Database },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof Database
+  }
+    ? keyof Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {
+      session_status: ["scheduled", "completed", "cancelled"],
+      student_level: ["beginner", "intermediate", "advanced"],
+      user_role: ["student", "coach", "admin"],
+      verification_status: ["pending", "verified", "rejected"],
+    },
+  },
+} as const
