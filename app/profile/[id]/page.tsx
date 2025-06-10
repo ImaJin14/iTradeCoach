@@ -11,38 +11,61 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
-interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
+// Base interface for the complete profile view
+interface BaseUserProfile {
+  id: string | null;
+  name: string | null;
+  email: string | null;
+  role: string | null;
   bio: string | null;
   website: string | null;
   twitter: string | null;
   linkedin: string | null;
   avatar_url: string | null;
-  created_at: string;
-  subscription_status: string;
-  profile_complete: boolean;
+  created_at: string | null;
+  subscription_status: string | null;
+  profile_complete: boolean | null;
+  notifications: any;
+  timezone: string | null;
+  language: string | null;
+  updated_at: string | null;
 }
 
-interface CoachProfile extends UserProfile {
+// Coach-specific fields
+interface CoachFields {
   verification_status: string;
   rating: number;
   total_students: number;
   earnings: number;
   hourly_rate: number;
   expertise_areas: string[];
+  algorand_wallet: string | null;
+  subscription_active: boolean | null;
+  subscription_required: boolean | null;
+  video_intro_url: string | null;
 }
 
-interface StudentProfile extends UserProfile {
+// Student-specific fields
+interface StudentFields {
   current_level: string;
   tokens_earned: number;
   courses_completed: string[];
+  learning_goals: string[] | null;
+  selected_coach_id: string | null;
+  selected_path: string | null;
+  subscription_required: boolean | null;
 }
 
+// Union type for all profile types
+type UserProfile = BaseUserProfile & (
+  | { role: 'coach' } & Partial<CoachFields>
+  | { role: 'student' } & Partial<StudentFields>
+  | { role: 'admin' }
+  | { role: string | null }
+);
+
 export default function UserProfilePage({ params }: { params: Promise<{ id: string }> }) {
-  const [profile, setProfile] = useState<UserProfile | CoachProfile | StudentProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userId, setUserId] = useState<string>('');
@@ -100,16 +123,16 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
 
     async function loadUserProfile() {
       try {
-        // Get basic profile
+        // Use the complete profile view that joins profiles and user_profiles
         const { data: basicProfile, error: profileError } = await supabase
-          .from('profiles')
+          .from('user_complete_profiles')
           .select('*')
           .eq('id', userId)
           .single();
 
         if (profileError) throw profileError;
 
-        let extendedProfile = basicProfile;
+        let extendedProfile: UserProfile = basicProfile as BaseUserProfile;
 
         // Get role-specific data
         if (basicProfile.role === 'coach') {
@@ -119,12 +142,13 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
             .eq('coach_id', userId)
             .single();
 
-          if (coachError) throw coachError;
-
-          extendedProfile = {
-            ...basicProfile,
-            ...coachData
-          };
+          if (!coachError && coachData) {
+            extendedProfile = {
+              ...basicProfile,
+              ...coachData,
+              role: 'coach'
+            } as UserProfile;
+          }
         } else if (basicProfile.role === 'student') {
           const { data: studentData, error: studentError } = await supabase
             .from('student_profiles')
@@ -132,12 +156,13 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
             .eq('student_id', userId)
             .single();
 
-          if (studentError) throw studentError;
-
-          extendedProfile = {
-            ...basicProfile,
-            ...studentData
-          };
+          if (!studentError && studentData) {
+            extendedProfile = {
+              ...basicProfile,
+              ...studentData,
+              role: 'student'
+            } as UserProfile;
+          }
         }
 
         setProfile(extendedProfile);
@@ -206,7 +231,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
                 <AvatarImage 
                   src={profile.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.id}`} 
                 />
-                <AvatarFallback className="text-2xl">{profile.name.charAt(0)}</AvatarFallback>
+                <AvatarFallback className="text-2xl">{profile.name?.charAt(0) || '?'}</AvatarFallback>
               </Avatar>
             </div>
             <CardTitle className="text-xl">{profile.name}</CardTitle>
@@ -215,7 +240,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
                 {profile.role}
               </Badge>
               <Badge variant={profile.subscription_status === 'active' ? 'default' : 'outline'}>
-                {profile.subscription_status}
+                {profile.subscription_status || 'none'}
               </Badge>
             </div>
           </CardHeader>
@@ -226,7 +251,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
             </div>
             <div className="flex items-center gap-2 text-sm">
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>Joined {new Date(profile.created_at).toLocaleDateString()}</span>
+              <span>Joined {profile.created_at ? new Date(profile.created_at).toLocaleDateString() : 'Unknown'}</span>
             </div>
             {profile.website && (
               <div className="flex items-center gap-2 text-sm">
@@ -278,34 +303,34 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                       <div className="text-sm text-muted-foreground">Verification</div>
-                      <Badge variant={(profile as CoachProfile).verification_status === 'verified' ? 'default' : 'outline'}>
-                        {(profile as CoachProfile).verification_status}
+                      <Badge variant={(profile as any).verification_status === 'verified' ? 'default' : 'outline'}>
+                        {(profile as any).verification_status || 'pending'}
                       </Badge>
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground">Rating</div>
-                      <div className="font-medium">{(profile as CoachProfile).rating}/5</div>
+                      <div className="font-medium">{(profile as any).rating || 0}/5</div>
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground">Students</div>
-                      <div className="font-medium">{(profile as CoachProfile).total_students}</div>
+                      <div className="font-medium">{(profile as any).total_students || 0}</div>
                     </div>
                     <div>
                       <div className="text-sm text-muted-foreground">Hourly Rate</div>
-                      <div className="font-medium">${(profile as CoachProfile).hourly_rate}/hr</div>
+                      <div className="font-medium">${(profile as any).hourly_rate || 0}/hr</div>
                     </div>
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground mb-2">Expertise Areas</div>
                     <div className="flex flex-wrap gap-2">
-                      {(profile as CoachProfile).expertise_areas?.map((area, index) => (
+                      {((profile as any).expertise_areas || []).map((area: string, index: number) => (
                         <Badge key={index} variant="outline">{area}</Badge>
                       ))}
                     </div>
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Total Earnings</div>
-                    <div className="text-2xl font-bold">${(profile as CoachProfile).earnings}</div>
+                    <div className="text-2xl font-bold">${(profile as any).earnings || 0}</div>
                   </div>
                 </CardContent>
               </Card>
@@ -322,16 +347,16 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
                   <div>
                     <div className="text-sm text-muted-foreground">Level</div>
                     <Badge variant="outline" className="capitalize">
-                      {(profile as StudentProfile).current_level}
+                      {(profile as any).current_level || 'beginner'}
                     </Badge>
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Tokens Earned</div>
-                    <div className="font-medium">{(profile as StudentProfile).tokens_earned}</div>
+                    <div className="font-medium">{(profile as any).tokens_earned || 0}</div>
                   </div>
                   <div>
                     <div className="text-sm text-muted-foreground">Courses Completed</div>
-                    <div className="font-medium">{(profile as StudentProfile).courses_completed?.length || 0}</div>
+                    <div className="font-medium">{((profile as any).courses_completed || []).length}</div>
                   </div>
                 </div>
               </CardContent>
@@ -354,7 +379,7 @@ export default function UserProfilePage({ params }: { params: Promise<{ id: stri
                 <div>
                   <div className="text-sm text-muted-foreground">Subscription Status</div>
                   <Badge variant={profile.subscription_status === 'active' ? 'default' : 'outline'}>
-                    {profile.subscription_status}
+                    {profile.subscription_status || 'none'}
                   </Badge>
                 </div>
               </div>

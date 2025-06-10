@@ -50,6 +50,17 @@ interface RawUserSubscription {
   current_period_end: string;
 }
 
+// ✅ FIXED: Helper function to safely extract strings from Json array
+function extractStringArray(jsonArray: any): string[] {
+  if (!Array.isArray(jsonArray)) {
+    return [];
+  }
+  
+  return jsonArray
+    .filter(item => typeof item === 'string' && item !== null)
+    .map(item => String(item));
+}
+
 export default function PricingPage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -164,7 +175,7 @@ export default function PricingPage() {
 
       if (error) throw error;
 
-      // Transform raw data to properly typed plans
+      // ✅ FIXED: Transform raw data to properly typed plans with correct features handling
       const formattedPlans: SubscriptionPlan[] = data?.map(plan => ({
         id: plan.id,
         name: plan.name,
@@ -172,10 +183,8 @@ export default function PricingPage() {
         price: plan.price,
         interval: plan.interval,
         role: plan.role,
-        // Safely handle JSONB features field
-        features: Array.isArray(plan.features) 
-          ? plan.features.filter(f => typeof f === 'string')
-          : [],
+        // ✅ FIXED: Properly handle JSONB features field
+        features: extractStringArray(plan.features),
         created_at: plan.created_at,
         updated_at: plan.updated_at
       })) || [];

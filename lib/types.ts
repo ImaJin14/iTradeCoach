@@ -328,32 +328,59 @@ export type Database = {
       }
       courses: {
         Row: {
+          category: string | null
           coach_id: string
           created_at: string
           description: string | null
+          duration: string | null
           id: number
           is_hidden: boolean | null
-          student_id: string
+          learning_objectives: string | null
+          level: string | null
+          prerequisites: string | null
+          price: number | null
+          status: string | null
+          student_id: string | null
+          tags: string[] | null
+          thumbnail: string | null
           title: string
           updated_at: string
         }
         Insert: {
+          category?: string | null
           coach_id: string
           created_at?: string
           description?: string | null
+          duration?: string | null
           id?: never
           is_hidden?: boolean | null
-          student_id: string
+          learning_objectives?: string | null
+          level?: string | null
+          prerequisites?: string | null
+          price?: number | null
+          status?: string | null
+          student_id?: string | null
+          tags?: string[] | null
+          thumbnail?: string | null
           title: string
           updated_at?: string
         }
         Update: {
+          category?: string | null
           coach_id?: string
           created_at?: string
           description?: string | null
+          duration?: string | null
           id?: never
           is_hidden?: boolean | null
-          student_id?: string
+          learning_objectives?: string | null
+          level?: string | null
+          prerequisites?: string | null
+          price?: number | null
+          status?: string | null
+          student_id?: string | null
+          tags?: string[] | null
+          thumbnail?: string | null
           title?: string
           updated_at?: string
         }
@@ -413,7 +440,29 @@ export type Database = {
           rating?: number
           student_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "live_session_feedback_live_session_id_fkey"
+            columns: ["live_session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "live_session_feedback_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_profiles"
+            referencedColumns: ["student_id"]
+          },
+          {
+            foreignKeyName: "live_session_feedback_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "student_progress"
+            referencedColumns: ["student_id"]
+          },
+        ]
       }
       live_sessions: {
         Row: {
@@ -648,7 +697,43 @@ export type Database = {
           title?: string
           uploaded_by?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "session_materials_live_session_id_fkey"
+            columns: ["live_session_id"]
+            isOneToOne: false
+            referencedRelation: "live_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_materials_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_materials_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "upcoming_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_materials_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "coach_profiles"
+            referencedColumns: ["coach_id"]
+          },
+          {
+            foreignKeyName: "session_materials_uploaded_by_fkey"
+            columns: ["uploaded_by"]
+            isOneToOne: false
+            referencedRelation: "coach_statistics"
+            referencedColumns: ["coach_id"]
+          },
+        ]
       }
       session_recordings: {
         Row: {
@@ -1056,7 +1141,22 @@ export type Database = {
           updated_at?: string
           website?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_prof_id_fkey"
+            columns: ["prof_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_profiles_prof_id_fkey"
+            columns: ["prof_id"]
+            isOneToOne: true
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_settings: {
         Row: {
@@ -1333,6 +1433,10 @@ export type Database = {
       generate_slug: {
         Args: { title: string }
         Returns: string
+      }
+      get_platform_stats: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       populate_role_specific_tables: {
         Args: Record<PropertyKey, never>

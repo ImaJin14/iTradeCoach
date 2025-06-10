@@ -25,7 +25,7 @@ const createPlanVariants = (plans: Record<string, Plan>): Record<BillingPeriod, 
   };
 };
 
-export const plans = {
+export const plans: Record<string, Plan> = {
   basic: {
     id: "basic",
     name: "Basic",
@@ -74,7 +74,7 @@ export const plans = {
     ],
     badge: "Custom",
   },
-} as const;
+};
 
 export const planVariants = createPlanVariants(plans);
 

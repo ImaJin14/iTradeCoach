@@ -184,7 +184,7 @@ export default function BlogPage() {
         .order('name');
 
       if (error) throw error;
-      setCategories(data || []);
+      // setCategories(data || []);
     } catch (error: any) {
       console.error('Error fetching categories:', error);
     }
