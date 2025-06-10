@@ -42,7 +42,9 @@ interface Session {
   duration: number;
   status: string;
   price: number;
-  notes: string;
+  notes: string | null;
+  coach_id: string;
+  student_id: string;
   coach: {
     id: string;
     name: string;
@@ -86,8 +88,8 @@ export default function SessionsPage() {
         if (profileError) throw profileError;
 
         setCurrentUser(user);
-        setUserRole(profile.role);
-        await fetchSessions(user.id, profile.role);
+        setUserRole(profile.role || ''); // Handle null role
+        await fetchSessions(user.id, profile.role || '');
       } catch (error: any) {
         console.error('Error checking access:', error);
         toast({
@@ -105,6 +107,7 @@ export default function SessionsPage() {
 
   async function fetchSessions(userId: string, role: string) {
     try {
+      // Get session data with proper filtering
       let query = supabase
         .from('sessions')
         .select(`
@@ -114,16 +117,8 @@ export default function SessionsPage() {
           status,
           price,
           notes,
-          coach:coach_id (
-            id,
-            name,
-            avatar_url
-          ),
-          student:student_id (
-            id,
-            name,
-            avatar_url
-          )
+          coach_id,
+          student_id
         `)
         .order('scheduled_time', { ascending: false });
 
@@ -139,10 +134,73 @@ export default function SessionsPage() {
         query = query.or(`coach_id.eq.${userId},student_id.eq.${userId}`);
       }
 
-      const { data, error } = await query;
+      const { data: sessionData, error: sessionError } = await query;
 
-      if (error) throw error;
-      setSessions(data || []);
+      if (sessionError) {
+        console.error('Session query error:', sessionError);
+        throw sessionError;
+      }
+
+      if (!sessionData || sessionData.length === 0) {
+        setSessions([]);
+        return;
+      }
+
+      // Get unique coach and student IDs
+      const coachIds = Array.from(new Set(sessionData.map(s => s.coach_id).filter(Boolean)));
+      const studentIds = Array.from(new Set(sessionData.map(s => s.student_id).filter(Boolean)));
+
+      // Fetch all user profiles for coaches and students
+      const allUserIds = [...coachIds, ...studentIds];
+      const { data: userProfiles, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('prof_id, avatar_url')
+        .in('prof_id', allUserIds);
+
+      if (profilesError) {
+        console.error('User profiles error:', profilesError);
+      }
+
+      // Fetch all basic profiles for names
+      const { data: basicProfiles, error: basicProfilesError } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .in('id', allUserIds);
+
+      if (basicProfilesError) {
+        console.error('Basic profiles error:', basicProfilesError);
+      }
+
+      // Combine the data efficiently with proper type handling
+      const enrichedSessions: Session[] = sessionData.map(session => {
+        const coachProfile = userProfiles?.find(up => up.prof_id === session.coach_id);
+        const coachBasic = basicProfiles?.find(bp => bp.id === session.coach_id);
+        const studentProfile = userProfiles?.find(up => up.prof_id === session.student_id);
+        const studentBasic = basicProfiles?.find(bp => bp.id === session.student_id);
+
+        return {
+          id: session.id,
+          scheduled_time: session.scheduled_time,
+          duration: session.duration || 60, // Default duration
+          status: session.status || 'scheduled', // Default status
+          price: session.price || 0, // Default price
+          notes: session.notes,
+          coach_id: session.coach_id,
+          student_id: session.student_id,
+          coach: {
+            id: session.coach_id,
+            name: coachBasic?.name || 'Unknown Coach',
+            avatar_url: coachProfile?.avatar_url || null
+          },
+          student: {
+            id: session.student_id,
+            name: studentBasic?.name || 'Unknown Student',
+            avatar_url: studentProfile?.avatar_url || null
+          }
+        };
+      });
+
+      setSessions(enrichedSessions);
     } catch (error: any) {
       console.error('Error fetching sessions:', error);
       toast({
@@ -150,13 +208,14 @@ export default function SessionsPage() {
         description: "Failed to load sessions. Please try again.",
         variant: "destructive",
       });
+      setSessions([]);
     }
   }
 
   const filteredSessions = sessions.filter(session => {
     const matchesSearch = 
-      session.coach.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      session.student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      session.coach?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      session.student?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       session.notes?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === "all" || session.status === statusFilter;
@@ -395,9 +454,11 @@ export default function SessionsPage() {
                         <div className="flex items-center gap-2">
                           <Avatar className="h-6 w-6">
                             <AvatarImage 
-                              src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach.id}`} 
+                              src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach_id}`} 
                             />
-                            <AvatarFallback className="text-xs">{session.coach.name.charAt(0)}</AvatarFallback>
+                            <AvatarFallback className="text-xs">
+                              {session.coach.name.charAt(0)}
+                            </AvatarFallback>
                           </Avatar>
                           <span className="font-medium text-sm">{session.coach.name}</span>
                         </div>
@@ -405,9 +466,11 @@ export default function SessionsPage() {
                         <div className="flex items-center gap-2">
                           <Avatar className="h-6 w-6">
                             <AvatarImage 
-                              src={session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student.id}`} 
+                              src={session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student_id}`} 
                             />
-                            <AvatarFallback className="text-xs">{session.student.name.charAt(0)}</AvatarFallback>
+                            <AvatarFallback className="text-xs">
+                              {session.student.name.charAt(0)}
+                            </AvatarFallback>
                           </Avatar>
                           <span className="font-medium text-sm">{session.student.name}</span>
                         </div>
@@ -417,17 +480,23 @@ export default function SessionsPage() {
                         <Avatar className="h-8 w-8">
                           <AvatarImage 
                             src={userRole === 'coach' 
-                              ? (session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student.id}`)
-                              : (session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach.id}`)
+                              ? (session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student_id}`)
+                              : (session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach_id}`)
                             } 
                           />
                           <AvatarFallback>
-                            {userRole === 'coach' ? session.student.name.charAt(0) : session.coach.name.charAt(0)}
+                            {userRole === 'coach' 
+                              ? session.student.name.charAt(0)
+                              : session.coach.name.charAt(0)
+                            }
                           </AvatarFallback>
                         </Avatar>
                         <div>
                           <div className="font-medium">
-                            {userRole === 'coach' ? session.student.name : session.coach.name}
+                            {userRole === 'coach' 
+                              ? session.student.name
+                              : session.coach.name
+                            }
                           </div>
                         </div>
                       </div>
@@ -455,7 +524,7 @@ export default function SessionsPage() {
                   </TableCell>
                   <TableCell>${session.price}</TableCell>
                   <TableCell>
-                    <div className="max-w-[200px] truncate" title={session.notes}>
+                    <div className="max-w-[200px] truncate" title={session.notes || ''}>
                       {session.notes || 'Coaching Session'}
                     </div>
                   </TableCell>

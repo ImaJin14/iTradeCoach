@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BookOpen, Star, Trophy } from "lucide-react";
+import { ArrowRight, BookOpen, Star, Trophy, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,18 +10,31 @@ import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
 interface LearningStats {
-  completedLessons: number;
-  currentLevel: string;
+  completedCourses: number;
+  currentLevel: 'beginner' | 'intermediate' | 'advanced';
   tokensEarned: number;
+  learningGoals: string[];
+  selectedPath: string | null;
+  selectedCoachId: string | null;
+}
+
+interface UserProfile {
+  role: 'student' | 'coach' | 'admin';
+}
+
+// Raw database type
+interface RawUserProfile {
+  role: string | null;
 }
 
 export default function LearnPage() {
   const [stats, setStats] = useState<LearningStats | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    async function fetchLearningStats() {
+    async function fetchLearningData() {
       try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
         
@@ -29,24 +42,97 @@ export default function LearnPage() {
           throw new Error('Not authenticated');
         }
 
-        const { data: studentProfile, error: profileError } = await supabase
-          .from('student_profiles')
-          .select('*')
-          .eq('student_id', user.id)
-          .single();
+        // First get the user's role
+        const { data: rawProfile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single() as { data: RawUserProfile | null; error: any };
 
         if (profileError) throw profileError;
 
-        setStats({
-          completedLessons: studentProfile.courses_completed?.length || 0,
-          currentLevel: studentProfile.current_level || 'beginner',
-          tokensEarned: studentProfile.tokens_earned || 0
-        });
+        // Validate and transform the profile data
+        if (!rawProfile || !rawProfile.role) {
+          throw new Error('Invalid profile data');
+        }
+
+        // Type guard to ensure role is valid
+        const validRoles = ['student', 'coach', 'admin'] as const;
+        if (!validRoles.includes(rawProfile.role as any)) {
+          throw new Error('Invalid user role');
+        }
+
+        const profile: UserProfile = {
+          role: rawProfile.role as 'student' | 'coach' | 'admin'
+        };
+
+        setUserProfile(profile);
+
+        // Only fetch student stats if user is a student
+        if (profile.role === 'student') {
+          const { data: studentProfile, error: studentError } = await supabase
+            .from('student_profiles')
+            .select(`
+              current_level,
+              tokens_earned,
+              courses_completed,
+              learning_goals,
+              selected_path,
+              selected_coach_id
+            `)
+            .eq('student_id', user.id)
+            .single();
+
+          if (studentError) {
+            // If no student profile exists, create one
+            if (studentError.code === 'PGRST116') {
+              const { error: insertError } = await supabase
+                .from('student_profiles')
+                .insert({
+                  student_id: user.id,
+                  current_level: 'beginner',
+                  tokens_earned: 0,
+                  courses_completed: [],
+                  learning_goals: []
+                });
+
+              if (insertError) throw insertError;
+
+              // Set default stats
+              setStats({
+                completedCourses: 0,
+                currentLevel: 'beginner',
+                tokensEarned: 0,
+                learningGoals: [],
+                selectedPath: null,
+                selectedCoachId: null
+              });
+            } else {
+              throw studentError;
+            }
+          } else {
+            // Validate current_level
+            const validLevels = ['beginner', 'intermediate', 'advanced'] as const;
+            const currentLevel = validLevels.includes(studentProfile.current_level as any) 
+              ? studentProfile.current_level as 'beginner' | 'intermediate' | 'advanced'
+              : 'beginner';
+
+            // Transform the data to match our interface
+            setStats({
+              completedCourses: studentProfile.courses_completed?.length || 0,
+              currentLevel,
+              tokensEarned: studentProfile.tokens_earned || 0,
+              learningGoals: studentProfile.learning_goals || [],
+              selectedPath: studentProfile.selected_path,
+              selectedCoachId: studentProfile.selected_coach_id
+            });
+          }
+        }
       } catch (error: any) {
-        console.error('Error fetching learning stats:', error);
+        console.error('Error fetching learning data:', error);
         toast({
           title: "Error",
-          description: "Failed to load learning statistics. Please try again.",
+          description: "Failed to load learning data. Please try again.",
           variant: "destructive",
         });
       } finally {
@@ -54,7 +140,7 @@ export default function LearnPage() {
       }
     }
 
-    fetchLearningStats();
+    fetchLearningData();
   }, [toast]);
 
   if (loading) {
@@ -67,27 +153,98 @@ export default function LearnPage() {
     );
   }
 
+  // If user is not a student, show different content
+  if (userProfile?.role !== 'student') {
+    return (
+      <div className="container py-16 space-y-8">
+        <div className="text-center space-y-4">
+          <h1 className="text-4xl font-bold">Learning Paths</h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+            {userProfile?.role === 'coach' 
+              ? 'As a coach, you help students navigate these learning paths'
+              : 'Explore our comprehensive learning resources'
+            }
+          </p>
+        </div>
+
+        {userProfile?.role === 'coach' && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 max-w-2xl mx-auto">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Coach Dashboard</h3>
+            <p className="text-blue-700 dark:text-blue-300 text-sm">
+              As a coach, you can view your students' progress and customize learning paths. 
+              Visit your dashboard to manage your coaching activities.
+            </p>
+            <Button asChild className="mt-4">
+              <Link href="/dashboard">Go to Dashboard</Link>
+            </Button>
+          </div>
+        )}
+
+        <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto">
+          {[
+            {
+              title: "Beginner",
+              description: "Master the fundamentals of cryptocurrency and blockchain technology",
+              topics: ["Crypto Basics", "Wallet Setup", "Exchange Trading", "Security Fundamentals"],
+              color: "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10",
+            },
+            {
+              title: "Intermediate",
+              description: "Dive deeper into DeFi, NFTs, and investment strategies",
+              topics: ["DeFi Protocols", "Yield Farming", "NFT Marketplaces", "Technical Analysis"],
+              color: "border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10",
+            },
+            {
+              title: "Advanced",
+              description: "Explore complex topics like tokenomics, DAOs and development",
+              topics: ["Smart Contracts", "Tokenomics", "DAO Governance", "Market Analysis"],
+              color: "border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10",
+            }
+          ].map((path, i) => (
+            <Card key={i} className={`${path.color}`}>
+              <CardHeader>
+                <CardTitle>{path.title}</CardTitle>
+                <CardDescription>{path.description}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2">
+                  {path.topics.map((topic, j) => (
+                    <li key={j} className="flex items-center">
+                      <div className="mr-2 h-1.5 w-1.5 rounded-full bg-primary"></div>
+                      {topic}
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Student-specific content
   return (
     <div className="container py-16 space-y-16">
       <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">Learning Paths</h1>
+        <h1 className="text-4xl font-bold">Your Learning Journey</h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Choose your path and start learning at your own pace
+          Track your progress and continue learning at your own pace
         </p>
       </div>
 
       {stats && (
-        <div className="grid gap-8 md:grid-cols-3 max-w-5xl mx-auto">
+        <div className="grid gap-8 md:grid-cols-4 max-w-6xl mx-auto">
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5 text-primary" />
-                <CardTitle className="text-lg">Completed Lessons</CardTitle>
+                <CardTitle className="text-lg">Completed Courses</CardTitle>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">{stats.completedLessons}</div>
-              <p className="text-sm text-muted-foreground">Total lessons completed</p>
+              <div className="text-3xl font-bold">{stats.completedCourses}</div>
+              <p className="text-sm text-muted-foreground">Courses finished</p>
             </CardContent>
           </Card>
 
@@ -100,7 +257,7 @@ export default function LearnPage() {
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold capitalize">{stats.currentLevel}</div>
-              <p className="text-sm text-muted-foreground">Your learning level</p>
+              <p className="text-sm text-muted-foreground">Your skill level</p>
             </CardContent>
           </Card>
 
@@ -116,6 +273,51 @@ export default function LearnPage() {
               <p className="text-sm text-muted-foreground">Learning rewards</p>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Target className="h-5 w-5 text-green-500" />
+                <CardTitle className="text-lg">Learning Goals</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{stats.learningGoals.length}</div>
+              <p className="text-sm text-muted-foreground">Active goals</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Show selected path if exists */}
+      {stats?.selectedPath && (
+        <div className="bg-primary/10 border border-primary/20 rounded-lg p-6 max-w-2xl mx-auto text-center">
+          <h3 className="font-semibold text-primary mb-2">Your Selected Path</h3>
+          <p className="text-primary/80 capitalize">{stats.selectedPath}</p>
+          {stats.selectedCoachId && (
+            <p className="text-sm text-muted-foreground mt-2">
+              You have a coach assigned to guide your learning
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Learning Goals */}
+      {stats?.learningGoals && stats.learningGoals.length > 0 && (
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-2xl font-bold text-center mb-8">Your Learning Goals</h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {stats.learningGoals.map((goal, i) => (
+              <Card key={i} className="border-dashed">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2">
+                    <Target className="h-4 w-4 text-green-500" />
+                    <span className="text-sm">{goal}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -126,27 +328,35 @@ export default function LearnPage() {
             description: "Master the fundamentals of cryptocurrency and blockchain technology",
             topics: ["Crypto Basics", "Wallet Setup", "Exchange Trading", "Security Fundamentals"],
             color: "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10",
-            recommended: stats?.currentLevel === 'beginner'
+            recommended: stats?.currentLevel === 'beginner',
+            path: 'beginner'
           },
           {
             title: "Intermediate",
             description: "Dive deeper into DeFi, NFTs, and investment strategies",
             topics: ["DeFi Protocols", "Yield Farming", "NFT Marketplaces", "Technical Analysis"],
             color: "border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10",
-            recommended: stats?.currentLevel === 'intermediate'
+            recommended: stats?.currentLevel === 'intermediate',
+            path: 'intermediate'
           },
           {
             title: "Advanced",
             description: "Explore complex topics like tokenomics, DAOs and development",
             topics: ["Smart Contracts", "Tokenomics", "DAO Governance", "Market Analysis"],
             color: "border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10",
-            recommended: stats?.currentLevel === 'advanced'
+            recommended: stats?.currentLevel === 'advanced',
+            path: 'advanced'
           }
         ].map((path, i) => (
           <Card key={i} className={`relative ${path.color}`}>
             {path.recommended && (
               <Badge className="absolute -top-2 -right-2 bg-primary">
                 Recommended
+              </Badge>
+            )}
+            {stats?.selectedPath === path.path && (
+              <Badge className="absolute -top-2 -left-2 bg-green-500">
+                Current Path
               </Badge>
             )}
             <CardHeader>
@@ -164,8 +374,9 @@ export default function LearnPage() {
               </ul>
             </CardContent>
             <CardFooter>
-              <Button className="w-full">
-                Start Learning <ArrowRight className="ml-2 h-4 w-4" />
+              <Button className="w-full" variant={path.recommended ? "default" : "outline"}>
+                {stats?.selectedPath === path.path ? "Continue Learning" : "Start Learning"} 
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </CardFooter>
           </Card>
@@ -177,9 +388,16 @@ export default function LearnPage() {
         <p className="text-muted-foreground max-w-2xl mx-auto">
           Get one-on-one coaching from expert traders to accelerate your learning
         </p>
-        <Button asChild size="lg">
-          <Link href="/coaches">Find a Coach</Link>
-        </Button>
+        <div className="flex gap-4 justify-center">
+          <Button asChild size="lg">
+            <Link href="/coaches">Find a Coach</Link>
+          </Button>
+          {stats?.selectedCoachId && (
+            <Button asChild size="lg" variant="outline">
+              <Link href="/sessions">View My Sessions</Link>
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

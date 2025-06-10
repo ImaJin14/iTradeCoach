@@ -41,6 +41,13 @@ const settingsFormSchema = z.object({
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
 
+// Type for notifications from database
+interface NotificationSettings {
+  email?: boolean;
+  push?: boolean;
+  marketing?: boolean;
+}
+
 export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -71,23 +78,61 @@ export default function SettingsPage() {
           return;
         }
 
+        // Get user settings using the correct primary key (id)
         const { data: settings, error: settingsError } = await supabase
           .from('user_settings')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('id', user.id)
           .maybeSingle();
 
         if (settingsError) {
+          console.error('Settings error:', settingsError);
           throw settingsError;
         }
 
+        // Get user profile for email
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.error('Profile error:', profileError);
+          throw profileError;
+        }
+
+        // Type-safe handling of notifications JSON
+        const defaultNotifications = {
+          email: true,
+          push: true,
+          marketing: false,
+        };
+
+        let notifications = defaultNotifications;
+        
+        if (settings?.notifications) {
+          try {
+            // Handle both object and string formats
+            const notificationData = typeof settings.notifications === 'string' 
+              ? JSON.parse(settings.notifications) 
+              : settings.notifications;
+            
+            // Validate and merge with defaults
+            notifications = {
+              email: typeof notificationData?.email === 'boolean' ? notificationData.email : defaultNotifications.email,
+              push: typeof notificationData?.push === 'boolean' ? notificationData.push : defaultNotifications.push,
+              marketing: typeof notificationData?.marketing === 'boolean' ? notificationData.marketing : defaultNotifications.marketing,
+            };
+          } catch (error) {
+            console.warn('Failed to parse notifications, using defaults:', error);
+            notifications = defaultNotifications;
+          }
+        }
+
         form.reset({
-          email: user.email || "",
-          notifications: settings?.notifications || {
-            email: true,
-            push: true,
-            marketing: false,
-          },
+          email: profile?.email || user.email || "",
+          notifications: notifications,
           timezone: settings?.timezone || "UTC",
           language: settings?.language || "en",
         });
@@ -115,24 +160,58 @@ export default function SettingsPage() {
         throw new Error('Not authenticated');
       }
 
+      // Update user_settings with correct column mapping
       const { error: updateError } = await supabase
         .from('user_settings')
         .upsert({
-          user_id: user.id,
-          notifications: data.notifications,
+          id: user.id, // Primary key should be user.id
+          prof_id: user.id, // Foreign key to user_profiles
+          notifications: data.notifications, // This will be properly serialized as JSON
           timezone: data.timezone,
           language: data.language,
           updated_at: new Date().toISOString(),
         });
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Settings update error:', updateError);
+        throw updateError;
+      }
 
-      if (user.email !== data.email) {
+      // Update email in profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          email: data.email,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (profileError) {
+        console.error('Profile update error:', profileError);
+        throw profileError;
+      }
+
+      // Update auth email if it changed
+      const { data: currentProfile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', user.id)
+        .single();
+
+      if (currentProfile?.email !== data.email) {
         const { error: emailError } = await supabase.auth.updateUser({
           email: data.email,
         });
 
-        if (emailError) throw emailError;
+        if (emailError) {
+          console.error('Auth email update error:', emailError);
+          // Don't throw here as the profile was already updated
+          toast({
+            title: "Settings updated",
+            description: "Settings saved. You may need to verify your new email address.",
+          });
+          return;
+        }
       }
 
       toast({
@@ -270,7 +349,7 @@ export default function SettingsPage() {
                     <FormItem>
                       <FormLabel>Timezone</FormLabel>
                       <FormControl>
-                        <Input {...field} />
+                        <Input {...field} placeholder="e.g., America/New_York" />
                       </FormControl>
                       <FormDescription>
                         Your preferred timezone for scheduling sessions
@@ -286,7 +365,7 @@ export default function SettingsPage() {
                     <FormItem>
                       <FormLabel>Language</FormLabel>
                       <FormControl>
-                        <Input {...field} />
+                        <Input {...field} placeholder="e.g., en, fr, es" />
                       </FormControl>
                       <FormDescription>
                         Your preferred language for the platform

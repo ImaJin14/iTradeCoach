@@ -85,8 +85,23 @@ const LEVEL_DESCRIPTIONS = {
   advanced: "Advanced strategies and complex concepts for experienced traders"
 };
 
+// Updated interface to handle nullable fields
+interface CoachProfile {
+  coach_id: string;
+  verification_status: string;
+  subscription_active: boolean;
+}
+
+// Raw database type
+interface RawCoachProfile {
+  coach_id: string;
+  verification_status: 'pending' | 'verified' | 'rejected' | null;
+  subscription_active: boolean | null;
+}
+
 export default function CreateCoursePage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [coachProfile, setCoachProfile] = useState<CoachProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
@@ -138,8 +153,43 @@ export default function CreateCoursePage() {
           return;
         }
 
+        // Get coach profile with verification status
+        const { data: rawCoachData, error: coachError } = await supabase
+          .from('coach_profiles')
+          .select('coach_id, verification_status, subscription_active')
+          .eq('coach_id', user.id)
+          .single() as { data: RawCoachProfile | null; error: any };
+
+        if (coachError || !rawCoachData) {
+          toast({
+            title: "Coach Profile Not Found",
+            description: "Please complete your coach profile setup.",
+            variant: "destructive",
+          });
+          router.push('/dashboard');
+          return;
+        }
+
+        // Transform and validate the coach data
+        const transformedCoachData: CoachProfile = {
+          coach_id: rawCoachData.coach_id,
+          verification_status: rawCoachData.verification_status || 'pending',
+          subscription_active: rawCoachData.subscription_active || false
+        };
+
+        // Check verification status
+        if (transformedCoachData.verification_status !== 'verified') {
+          toast({
+            title: "Verification Required",
+            description: "Your coach profile must be verified to create courses.",
+            variant: "destructive",
+          });
+          router.push('/dashboard');
+          return;
+        }
+
         // Check subscription status
-        if (profile.subscription_status !== 'active') {
+        if (!transformedCoachData.subscription_active) {
           toast({
             title: "Subscription Required",
             description: "You need an active subscription to create courses.",
@@ -150,6 +200,7 @@ export default function CreateCoursePage() {
         }
 
         setCurrentUser(user);
+        setCoachProfile(transformedCoachData);
       } catch (error: any) {
         console.error('Error checking coach access:', error);
         router.push('/dashboard');
@@ -202,84 +253,94 @@ export default function CreateCoursePage() {
       const fileExt = thumbnailFile.name.split('.').pop();
       const fileName = `${currentUser.id}/course-${Date.now()}.${fileExt}`;
       
+      // Use existing storage bucket (session-materials)
       const { error: uploadError } = await supabase.storage
-        .from('course-thumbnails')
+        .from('session-materials')
         .upload(fileName, thumbnailFile);
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('course-thumbnails')
+      const { data } = supabase.storage
+        .from('session-materials')
         .getPublicUrl(fileName);
 
-      return publicUrl;
+      return data.publicUrl;
     } catch (error) {
       console.error('Error uploading thumbnail:', error);
+      toast({
+        title: "Upload Error", 
+        description: "Failed to upload thumbnail. The course will be saved without it.",
+        variant: "destructive",
+      });
       return null;
     }
   }
 
-  async function onSubmit(data: CourseFormValues) {
-    if (!currentUser) return;
+async function onSubmit(data: CourseFormValues) {
+  if (!currentUser || !coachProfile) return;
 
-    setSaving(true);
-    try {
-      // Upload thumbnail if provided
-      let thumbnailUrl = data.thumbnail;
-      if (thumbnailFile) {
-        const uploadedUrl = await uploadThumbnail();
-        if (uploadedUrl) {
-          thumbnailUrl = uploadedUrl;
-        }
+  setSaving(true);
+  try {
+    // Upload thumbnail if provided
+    let thumbnailUrl = data.thumbnail;
+    if (thumbnailFile) {
+      const uploadedUrl = await uploadThumbnail();
+      if (uploadedUrl) {
+        thumbnailUrl = uploadedUrl;
       }
-
-      // Process tags
-      const tagsArray = data.tags 
-        ? data.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
-        : [];
-
-      // Create course
-      const { data: course, error: courseError } = await supabase
-        .from('courses')
-        .insert({
-          title: data.title,
-          description: data.description,
-          level: data.level,
-          category: data.category,
-          duration: data.duration,
-          price: parseFloat(data.price),
-          thumbnail: thumbnailUrl,
-          learning_objectives: data.learning_objectives,
-          prerequisites: data.prerequisites || null,
-          tags: tagsArray,
-          coach_id: currentUser.id,
-          status: 'draft',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (courseError) throw courseError;
-
-      toast({
-        title: "Course Created",
-        description: "Your course has been created successfully. You can now add content and publish it.",
-      });
-
-      // Redirect to course management or classroom
-      router.push(`/classroom?tab=courses&level=${data.level}`);
-    } catch (error: any) {
-      console.error('Error creating course:', error);
-      toast({
-        title: "Error",
-        description: "Failed to create course. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
     }
+
+    // Process tags
+    const tagsArray = data.tags 
+      ? data.tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0)
+      : [];
+
+    // Create course with explicit typing to override generated types
+    const courseData: any = {
+      title: data.title,
+      description: data.description,
+      level: data.level,
+      category: data.category,
+      duration: data.duration,
+      price: parseFloat(data.price),
+      thumbnail: thumbnailUrl || null,
+      learning_objectives: data.learning_objectives,
+      prerequisites: data.prerequisites || null,
+      tags: tagsArray,
+      coach_id: coachProfile.coach_id,
+      student_id: null, // Explicitly set to null since it's optional in your schema
+      status: 'draft',
+      is_hidden: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    const { data: course, error: courseError } = await supabase
+      .from('courses')
+      .insert(courseData)
+      .select()
+      .single();
+
+    if (courseError) throw courseError;
+
+    toast({
+      title: "Course Created",
+      description: "Your course has been created successfully. You can now add content and publish it.",
+    });
+
+    // Redirect to course management or classroom
+    router.push(`/classroom?tab=courses&level=${data.level}`);
+  } catch (error: any) {
+    console.error('Error creating course:', error);
+    toast({
+      title: "Error",
+      description: `Failed to create course: ${error.message || 'Please try again.'}`,
+      variant: "destructive",
+    });
+  } finally {
+    setSaving(false);
   }
+}
 
   if (loading) {
     return (
@@ -381,7 +442,7 @@ export default function CreateCoursePage() {
           </CardContent>
         </Card>
       ) : (
-        // Edit Mode
+        // Edit Mode - keeping the rest of the form unchanged
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
             <div className="grid md:grid-cols-2 gap-8">

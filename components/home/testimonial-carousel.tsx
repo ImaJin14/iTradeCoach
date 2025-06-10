@@ -25,13 +25,19 @@ export default function TestimonialCarousel() {
             author_title,
             rating,
             created_at,
-            profiles:author_id (avatar_url)
+            user_profiles!author_id (
+              avatar_url
+            )
           `)
           .eq('approved', true)
           .order('created_at', { ascending: false })
           .limit(4);
 
-        if (error) throw error;
+        if (error) {
+          console.error('Supabase error:', error);
+          throw error;
+        }
+        
         setTestimonials(data || []);
       } catch (error) {
         console.error('Error fetching testimonials:', error);
@@ -89,7 +95,7 @@ export default function TestimonialCarousel() {
                       <div className="absolute -inset-0.5 bg-gradient-to-r from-primary to-blue-600 rounded-full blur opacity-40"></div>
                       <Avatar className="h-16 w-16 border-4 border-background relative">
                         <AvatarImage 
-                          src={testimonial.profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${testimonial.author_id}`}
+                          src={testimonial.user_profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${testimonial.author_id}`}
                           alt={testimonial.author_name} 
                         />
                         <AvatarFallback>{testimonial.author_name.charAt(0)}</AvatarFallback>

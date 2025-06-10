@@ -212,18 +212,13 @@ export default function ScheduleSessionPage() {
 
   async function fetchStudents(coachId: string) {
     try {
-      // Get sessions with related profile data
+      // Get sessions for this coach to find their students
       const { data: sessionData, error: sessionError } = await supabase
         .from('sessions')
         .select(`
           student_id,
           created_at,
-          status,
-          student_profiles!sessions_student_id_fkey(
-            student_id,
-            current_level,
-            tokens_earned
-          )
+          status
         `)
         .eq('coach_id', coachId)
         .order('created_at', { ascending: false });
@@ -238,37 +233,55 @@ export default function ScheduleSessionPage() {
       // Get unique student IDs
       const studentIds = Array.from(new Set(sessionData.map(s => s.student_id)));
       
-      // Get user profile data (avatars, bio, etc.)
+      // Get student profiles separately
+      const { data: studentProfiles, error: studentProfileError } = await supabase
+        .from('student_profiles')
+        .select(`
+          student_id,
+          current_level,
+          tokens_earned
+        `)
+        .in('student_id', studentIds);
+  
+      if (studentProfileError) throw studentProfileError;
+
+      // Get user profiles separately  
       const { data: userProfiles, error: userProfileError } = await supabase
         .from('user_profiles')
-        .select('prof_id, avatar_url, bio')
+        .select(`
+          prof_id,
+          avatar_url
+        `)
         .in('prof_id', studentIds);
   
       if (userProfileError) throw userProfileError;
-  
-      // Get basic profile data (names, emails) 
-      const { data: profiles, error: profileError } = await supabase
+
+      // Get basic profiles separately
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, name, email')
+        .select(`
+          id,
+          name,
+          email
+        `)
         .in('id', studentIds);
   
-      if (profileError) throw profileError;
+      if (profilesError) throw profilesError;
   
       // Combine data and calculate stats
       const studentsMap = new Map();
       
-      sessionData.forEach(session => {
-        const studentId = session.student_id;
-        
-        if (!studentsMap.has(studentId)) {
-          const userProfile = userProfiles?.find(p => p.prof_id === studentId);
-          const profile = profiles?.find(p => p.id === studentId);
-          const studentProfile = session.student_profiles;
-          
+      // Initialize students with their profile data
+      studentIds.forEach(studentId => {
+        const studentProfile = studentProfiles?.find(sp => sp.student_id === studentId);
+        const userProfile = userProfiles?.find(up => up.prof_id === studentId);
+        const profile = profiles?.find(p => p.id === studentId);
+
+        if (profile) {
           studentsMap.set(studentId, {
             id: studentId,
-            name: profile?.name || 'Unknown',
-            email: profile?.email || 'Unknown',
+            name: profile.name || 'Unknown',
+            email: profile.email || 'Unknown',
             avatar_url: userProfile?.avatar_url || null,
             current_level: studentProfile?.current_level || 'beginner',
             tokens_earned: studentProfile?.tokens_earned || 0,
@@ -276,12 +289,17 @@ export default function ScheduleSessionPage() {
             last_session: null
           });
         }
-  
-        const student = studentsMap.get(studentId);
-        if (session.status === 'completed') {
-          student.sessions_completed += 1;
-          if (!student.last_session || session.created_at > student.last_session) {
-            student.last_session = session.created_at;
+      });
+
+      // Calculate session statistics
+      sessionData.forEach(session => {
+        const student = studentsMap.get(session.student_id);
+        if (student) {
+          if (session.status === 'completed') {
+            student.sessions_completed += 1;
+            if (!student.last_session || session.created_at > student.last_session) {
+              student.last_session = session.created_at;
+            }
           }
         }
       });
@@ -294,6 +312,7 @@ export default function ScheduleSessionPage() {
         description: "Failed to load students. Please try again.",
         variant: "destructive",
       });
+      setStudents([]);
     }
   }
 
@@ -309,6 +328,7 @@ export default function ScheduleSessionPage() {
       setLiveSessions(data || []);
     } catch (error: any) {
       console.error('Error fetching live sessions:', error);
+      setLiveSessions([]);
     }
   }
 
@@ -317,7 +337,7 @@ export default function ScheduleSessionPage() {
 
     setSaving(true);
     try {
-      // Create live session
+      // Create live session with proper field mapping
       const { data: session, error: sessionError } = await supabase
         .from('live_sessions')
         .insert({
@@ -331,35 +351,47 @@ export default function ScheduleSessionPage() {
           coach_id: currentUser.id,
           status: 'scheduled',
           current_participants: 0,
-          created_at: new Date().toISOString()
+          // Note: created_at and updated_at are handled by database defaults/triggers
         })
         .select()
         .single();
 
-      if (sessionError) throw sessionError;
+      if (sessionError) {
+        console.error('Session creation error:', sessionError);
+        throw sessionError;
+      }
 
       // If specific students are selected, create enrollments
       if (data.selected_students && data.selected_students.length > 0) {
         const enrollments = data.selected_students.map(studentId => ({
           session_id: session.id,
           student_id: studentId,
-          enrolled_at: new Date().toISOString(),
           status: 'enrolled'
+          // Note: enrolled_at, created_at, updated_at are handled by database defaults/triggers
         }));
 
         const { error: enrollmentError } = await supabase
           .from('session_enrollments')
           .insert(enrollments);
 
-        if (enrollmentError) throw enrollmentError;
+        if (enrollmentError) {
+          console.error('Enrollment creation error:', enrollmentError);
+          throw enrollmentError;
+        }
 
         // Update current participants count
         const { error: updateError } = await supabase
           .from('live_sessions')
-          .update({ current_participants: data.selected_students.length })
+          .update({ 
+            current_participants: data.selected_students.length,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', session.id);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('Participant count update error:', updateError);
+          throw updateError;
+        }
       }
 
       toast({

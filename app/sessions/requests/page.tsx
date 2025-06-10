@@ -125,61 +125,60 @@ export default function SessionRequestsPage() {
 
   async function fetchSessionRequests(coachId: string) {
     try {
-      const { data, error } = await supabase
+      // First, get the session requests
+      const { data: requestsData, error: requestsError } = await supabase
         .from('session_requests')
-        .select(`
-          *,
-          student_profiles!session_requests_student_id_fkey (
-            student_id,
-            user_profiles!student_profiles_student_id_fkey (
-              avatar_url,
-              prof_id
-            )
-          )
-        `)
+        .select('*')
         .eq('coach_id', coachId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-
-      if (error) {
-        console.error('Supabase error details:', error);
-        throw error;
+      if (requestsError) {
+        console.error('Session requests error:', requestsError);
+        throw requestsError;
       }
-  
-      // Now get the profile info from the profiles table
-      const studentIds = data?.map(request => 
-        request.student_profiles?.user_profiles?.prof_id
-      ).filter(Boolean) || [];
-  
+
+      if (!requestsData || requestsData.length === 0) {
+        setSessionRequests([]);
+        return;
+      }
+
+      // Get unique student IDs
+      const studentIds = Array.from(new Set(requestsData.map(r => r.student_id)));
+
+      // Get user profiles for avatars
+      const { data: userProfilesData, error: userProfilesError } = await supabase
+        .from('user_profiles')
+        .select('prof_id, avatar_url')
+        .in('prof_id', studentIds);
+
+      if (userProfilesError) {
+        console.error('User profiles error:', userProfilesError);
+      }
+
+      // Get basic profiles for names and emails
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('id, name, email')
         .in('id', studentIds);
-  
+
       if (profilesError) {
         console.error('Profiles error:', profilesError);
       }
-  
-      // Create a lookup map
-      const profilesMap = new Map(
-        profilesData?.map(profile => [profile.id, profile]) || []
-      );
-  
-      // Transform the data
-      const transformedData = data?.map(request => {
-        const profileId = request.student_profiles?.user_profiles?.prof_id;
-        const profile = profilesMap.get(profileId);
+
+      // Combine the data
+      const transformedData: SessionRequest[] = requestsData.map(request => {
+        const userProfile = userProfilesData?.find(up => up.prof_id === request.student_id);
+        const profile = profilesData?.find(p => p.id === request.student_id);
         
         return {
           ...request,
           student: {
             name: profile?.name || 'Unknown Student',
-            email: profile?.email || '',
-            avatar_url: request.student_profiles?.user_profiles?.avatar_url || null
+            email: profile?.email || 'Unknown Email',
+            avatar_url: userProfile?.avatar_url || null
           }
         };
-      }) || [];
+      });
 
       setSessionRequests(transformedData);
     } catch (error: any) {
@@ -189,6 +188,7 @@ export default function SessionRequestsPage() {
         description: "Failed to load session requests. Please try again.",
         variant: "destructive",
       });
+      setSessionRequests([]);
     }
   }
 
@@ -204,10 +204,28 @@ export default function SessionRequestsPage() {
         })
         .eq('id', requestId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Request update error:', error);
+        throw error;
+      }
 
       // If approved, create a session
       if (status === 'approved' && selectedRequest) {
+        // Get coach's hourly rate for pricing
+        const { data: coachProfile, error: coachError } = await supabase
+          .from('coach_profiles')
+          .select('hourly_rate')
+          .eq('coach_id', currentUser.id)
+          .single();
+
+        if (coachError) {
+          console.error('Coach profile error:', coachError);
+        }
+
+        const sessionPrice = coachProfile?.hourly_rate 
+          ? (coachProfile.hourly_rate * (selectedRequest.duration / 60))
+          : 0;
+
         const { error: sessionError } = await supabase
           .from('sessions')
           .insert({
@@ -216,17 +234,22 @@ export default function SessionRequestsPage() {
             scheduled_time: selectedRequest.preferred_time,
             duration: selectedRequest.duration,
             status: 'scheduled',
-            price: 0, // Will be calculated based on coach's hourly rate
-            notes: selectedRequest.topic,
-            created_at: new Date().toISOString()
+            price: sessionPrice,
+            notes: selectedRequest.topic
           });
 
-        if (sessionError) throw sessionError;
+        if (sessionError) {
+          console.error('Session creation error:', sessionError);
+          throw sessionError;
+        }
 
         // Update request status to scheduled
         await supabase
           .from('session_requests')
-          .update({ status: 'scheduled' })
+          .update({ 
+            status: 'scheduled',
+            updated_at: new Date().toISOString()
+          })
           .eq('id', requestId);
       }
 

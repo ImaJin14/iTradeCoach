@@ -50,6 +50,25 @@ const profileFormSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
+// Define proper types for the profile data
+interface UserProfile {
+  bio: string | null;
+  website: string | null;
+  twitter: string | null;
+  linkedin: string | null;
+  avatar_url: string | null;
+  profile_complete: boolean;
+}
+
+interface ProfileData {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: string | null;
+  subscription_status: string | null;
+  user_profiles: UserProfile[];
+}
+
 export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -82,55 +101,36 @@ export default function ProfilePage() {
           return;
         }
 
-        const { data: profile, error: profileError } = await supabase
+        // First get the profile data
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, name, email, role, subscription_status')
           .eq('id', user.id)
-          .maybeSingle();
+          .single();
 
         if (profileError) throw profileError;
 
-        if (!profile) {
-          // Create a new profile if one doesn't exist
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .insert({
-              id: user.id,
-              email: user.email,
-              name: user.user_metadata?.name || "",
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            });
+        // Then get the user profile data
+        const { data: userProfileData, error: userProfileError } = await supabase
+          .from('user_profiles')
+          .select('bio, website, twitter, linkedin, avatar_url, profile_complete')
+          .eq('prof_id', user.id)
+          .maybeSingle();
 
-          if (insertError) throw insertError;
+        if (userProfileError) throw userProfileError;
 
-          // Fetch the newly created profile
-          const { data: newProfile, error: newProfileError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
+        // Set avatar URL
+        setAvatarUrl(userProfileData?.avatar_url || null);
+        
+        // Reset form with the correct data
+        form.reset({
+          name: profileData?.name || "",
+          bio: userProfileData?.bio || "",
+          website: userProfileData?.website || "",
+          twitter: userProfileData?.twitter || "",
+          linkedin: userProfileData?.linkedin || "",
+        });
 
-          if (newProfileError) throw newProfileError;
-
-          setAvatarUrl(newProfile.avatar_url);
-          form.reset({
-            name: newProfile.name || "",
-            bio: newProfile.bio || "",
-            website: newProfile.website || "",
-            twitter: newProfile.twitter || "",
-            linkedin: newProfile.linkedin || "",
-          });
-        } else {
-          setAvatarUrl(profile.avatar_url);
-          form.reset({
-            name: profile.name || "",
-            bio: profile.bio || "",
-            website: profile.website || "",
-            twitter: profile.twitter || "",
-            linkedin: profile.linkedin || "",
-          });
-        }
       } catch (error) {
         console.error('Error loading profile:', error);
         toast({
@@ -198,18 +198,21 @@ export default function ProfilePage() {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data: { publicUrl }, error: urlError } = await supabase.storage
+      // Get public URL - fixed the destructuring
+      const { data } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
-      if (urlError) throw urlError;
+      const publicUrl = data.publicUrl;
 
-      // Update profile with new avatar URL
+      // Update avatar_url in user_profiles table
       const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', user.id);
+        .from('user_profiles')
+        .update({ 
+          avatar_url: publicUrl,
+          updated_at: new Date().toISOString()
+        })
+        .eq('prof_id', user.id);
 
       if (updateError) throw updateError;
 
@@ -242,19 +245,31 @@ export default function ProfilePage() {
         throw new Error('Not authenticated');
       }
 
-      const { error: updateError } = await supabase
+      // Update name in profiles table
+      const { error: profileUpdateError } = await supabase
         .from('profiles')
         .update({
           name: data.name,
-          bio: data.bio,
-          website: data.website,
-          twitter: data.twitter,
-          linkedin: data.linkedin,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
 
-      if (updateError) throw updateError;
+      if (profileUpdateError) throw profileUpdateError;
+
+      // Update profile details in user_profiles table
+      const { error: userProfileUpdateError } = await supabase
+        .from('user_profiles')
+        .update({
+          bio: data.bio,
+          website: data.website,
+          twitter: data.twitter,
+          linkedin: data.linkedin,
+          profile_complete: true, // Mark profile as complete
+          updated_at: new Date().toISOString(),
+        })
+        .eq('prof_id', user.id);
+
+      if (userProfileUpdateError) throw userProfileUpdateError;
 
       toast({
         title: "Profile updated",

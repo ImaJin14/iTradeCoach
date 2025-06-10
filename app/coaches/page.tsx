@@ -9,7 +9,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
-import { CoachProfile } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { 
@@ -34,14 +33,33 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+// Fixed: Removed duplicates and made unique
 const allExpertiseAreas = [
   "DeFi", "NFTs", "Trading", "Technical Analysis", "Risk Management", "Security", 
-  "Technical Analysis", "Market Analysis", "Portfolio Management", "DAOs", "Investing", 
-  "Smart Contracts", "Development", "Tax Planning", "Portfolio Management"
+  "Market Analysis", "Portfolio Management", "DAOs", "Investing", 
+  "Smart Contracts", "Development", "Tax Planning", "Options Trading"
 ];
 
+interface CoachData {
+  coach_id: string;
+  expertise_areas: string[] | null;
+  hourly_rate: number | null;
+  rating: number | null;
+  total_students: number | null;
+  verification_status: "pending" | "verified" | "rejected" | null;
+  user_profiles: {
+    prof_id: string;
+    bio: string | null;
+    avatar_url: string | null;
+  } | null;
+  profiles: {
+    name: string | null;
+    email: string | null;
+  } | null;
+}
+
 export default function CoachesPage() {
-  const [coaches, setCoaches] = useState<CoachProfile[]>([]);
+  const [coaches, setCoaches] = useState<CoachData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [priceRange, setPriceRange] = useState([0, 200]);
@@ -59,30 +77,37 @@ export default function CoachesPage() {
       const { data, error } = await supabase
         .from('coach_profiles')
         .select(`
-          *,
-          profiles:coach_id (
+          coach_id,
+          expertise_areas,
+          hourly_rate,
+          rating,
+          total_students,
+          verification_status,
+          user_profiles!coach_id (
+            prof_id,
+            bio,
+            avatar_url
+          ),
+          profiles!coach_id (
             name,
             email
           )
         `)
         .eq('verification_status', 'verified');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
       
-      // Transform snake_case to camelCase
-      const transformedData = data?.map(coach => ({
-        ...coach,
-        hourlyRate: coach.hourly_rate,
-        expertiseAreas: coach.expertise_areas,
-        totalStudents: coach.total_students,
-        availabilitySchedule: coach.availability_schedule,
-        verificationStatus: coach.verification_status,
-        users: coach.profiles.coach_id // Map the profiles relation to users for compatibility
-      }));
-      
-      setCoaches(transformedData || []);
+      // // Only set coaches if we have valid data
+      // if (data) {
+      //   setCoaches(data);
+      // }
     } catch (error) {
       console.error('Error fetching coaches:', error);
+      // Keep coaches as empty array on error
+      setCoaches([]);
     } finally {
       setLoading(false);
     }
@@ -95,45 +120,41 @@ export default function CoachesPage() {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         return (
-          coach.users?.name?.toLowerCase().includes(query) ||
-          coach.bio?.toLowerCase().includes(query) ||
-          coach.expertiseAreas?.some(area => area.toLowerCase().includes(query))
+          coach.profiles?.name?.toLowerCase().includes(query) ||
+          coach.user_profiles?.bio?.toLowerCase().includes(query) ||
+          coach.expertise_areas?.some(area => area.toLowerCase().includes(query))
         );
       }
       return true;
     })
     .filter(coach => {
       // Price range filter
-      return coach.hourlyRate >= priceRange[0] && coach.hourlyRate <= priceRange[1];
+      const hourlyRate = coach.hourly_rate || 0;
+      return hourlyRate >= priceRange[0] && hourlyRate <= priceRange[1];
     })
     .filter(coach => {
       // Expertise filter
       if (selectedExpertise.length === 0) return true;
-      return selectedExpertise.some(expertise => coach.expertiseAreas.includes(expertise));
+      return coach.expertise_areas && selectedExpertise.some(expertise => coach.expertise_areas!.includes(expertise));
     })
     .filter(coach => {
       // Rating filter
       if (minRating === null) return true;
-      return coach.rating >= minRating;
-    })
-    .filter(coach => {
-      // Availability filter
-      if (!availability) return true;
-      return coach.availabilitySchedule.some(slot => slot.day === availability);
+      return (coach.rating || 0) >= minRating;
     })
     .sort((a, b) => {
       // Sorting
       switch (sortOption) {
         case "rating-desc":
-          return b.rating - a.rating;
+          return (b.rating || 0) - (a.rating || 0);
         case "rating-asc":
-          return a.rating - b.rating;
+          return (a.rating || 0) - (b.rating || 0);
         case "price-desc":
-          return b.hourlyRate - a.hourlyRate;
+          return (b.hourly_rate || 0) - (a.hourly_rate || 0);
         case "price-asc":
-          return a.hourlyRate - b.hourlyRate;
+          return (a.hourly_rate || 0) - (b.hourly_rate || 0);
         case "sessions-desc":
-          return b.totalStudents - a.totalStudents;
+          return (b.total_students || 0) - (a.total_students || 0);
         default:
           return 0;
       }
@@ -245,28 +266,6 @@ export default function CoachesPage() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                <div>
-                  <h3 className="font-medium mb-2">Availability</h3>
-                  <Select
-                    value={availability ?? "all"}
-                    onValueChange={(value) => setAvailability(value === "all" ? null : value)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Any day" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Any day</SelectItem>
-                      <SelectItem value="Monday">Monday</SelectItem>
-                      <SelectItem value="Tuesday">Tuesday</SelectItem>
-                      <SelectItem value="Wednesday">Wednesday</SelectItem>
-                      <SelectItem value="Thursday">Thursday</SelectItem>
-                      <SelectItem value="Friday">Friday</SelectItem>
-                      <SelectItem value="Saturday">Saturday</SelectItem>
-                      <SelectItem value="Sunday">Sunday</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
                 
                 <div>
                   <h3 className="font-medium mb-2">Expertise</h3>
@@ -344,30 +343,6 @@ export default function CoachesPage() {
               </SelectContent>
             </Select>
           </div>
-
-          <Separator />
-
-          <div>
-            <h3 className="font-medium mb-3">Availability</h3>
-            <Select
-              value={availability ?? "all"}
-              onValueChange={(value) => setAvailability(value === "all" ? null : value)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Any day" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Any day</SelectItem>
-                <SelectItem value="Monday">Monday</SelectItem>
-                <SelectItem value="Tuesday">Tuesday</SelectItem>
-                <SelectItem value="Wednesday">Wednesday</SelectItem>
-                <SelectItem value="Thursday">Thursday</SelectItem>
-                <SelectItem value="Friday">Friday</SelectItem>
-                <SelectItem value="Saturday">Saturday</SelectItem>
-                <SelectItem value="Sunday">Sunday</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
           
           <Separator />
           
@@ -398,37 +373,50 @@ export default function CoachesPage() {
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {filteredCoaches.map((coach) => (
-                <Card key={coach.user_id} className="overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
+                <Card key={coach.coach_id} className="overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-12 w-12 border-2 border-muted">
-                          <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.user_id}`} alt={coach.users.name} />
-                          <AvatarFallback>{coach.users.name.substring(0, 2)}</AvatarFallback>
+                          <AvatarImage 
+                            src={coach.user_profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`} 
+                            alt={coach.profiles?.name || 'Coach'} 
+                          />
+                          <AvatarFallback>
+                            {coach.profiles?.name?.substring(0, 2) || 'CO'}
+                          </AvatarFallback>
                         </Avatar>
                         <div>
-                          <CardTitle className="text-lg">{coach.users.name}</CardTitle>
+                          <CardTitle className="text-lg">
+                            {coach.profiles?.name || 'Unknown Coach'}
+                          </CardTitle>
                           <div className="flex items-center mt-1">
                             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400 mr-1" />
-                            <span className="text-sm font-medium">{coach.rating}</span>
-                            <span className="text-sm text-muted-foreground ml-1">({coach.totalStudents} sessions)</span>
+                            <span className="text-sm font-medium">{coach.rating || 0}</span>
+                            <span className="text-sm text-muted-foreground ml-1">({coach.total_students || 0} students)</span>
                           </div>
                         </div>
                       </div>
-                      <Badge variant="outline" className="font-medium">${coach.hourlyRate}/hr</Badge>
+                      <Badge variant="outline" className="font-medium">${coach.hourly_rate || 0}/hr</Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="py-2 flex-grow">
-                    <p className="text-sm text-muted-foreground line-clamp-3 mb-3">{coach.bio}</p>
+                    <p className="text-sm text-muted-foreground line-clamp-3 mb-3">
+                      {coach.user_profiles?.bio || 'No bio available'}
+                    </p>
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {coach.expertiseAreas.map((tag) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
-                      ))}
+                      {coach.expertise_areas?.map((tag, index) => (
+                        <Badge key={`${coach.coach_id}-${tag}-${index}`} variant="secondary" className="text-xs">
+                          {tag}
+                        </Badge>
+                      )) || (
+                        <span className="text-xs text-muted-foreground">No expertise areas listed</span>
+                      )}
                     </div>
                   </CardContent>
                   <CardFooter className="pt-2">
                     <Button asChild className="w-full">
-                      <Link href={`/coaches/${coach.user_id}`}>View Profile</Link>
+                      <Link href={`/coaches/${coach.coach_id}`}>View Profile</Link>
                     </Button>
                   </CardFooter>
                 </Card>

@@ -43,7 +43,6 @@ interface CoachProfile {
   } | null;
 }
 
-// We need to get user info from the profiles table separately
 interface UserInfo {
   id: string;
   name: string | null;
@@ -53,35 +52,54 @@ interface UserInfo {
 
 interface Review {
   id: string;
-  student_name: string;
-  student_avatar: string | null; 
+  text: string;
+  author_name: string;
+  author_title: string;
   rating: number;
-  date: string;
-  content: string;
+  approved: boolean;
+  created_at: string;
+  author_avatar: string | null;
 }
 
 interface AvailabilitySlot {
-  day: string;
-  startTime: string;
-  endTime: string;
-}
-
-// Updated session interface to match actual database structure
-interface SessionWithProfile {
   id: string;
-  student_id: string;
-  created_at: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  status: string;
+  notes: string | null;
 }
 
-export default function CoachProfile({ params }: { params: { id: string } }) {
+interface SessionStats {
+  total_sessions: number;
+  completed_sessions: number;
+  avg_rating: number;
+}
+
+export default function CoachProfile({ params }: { params: Promise<{ id: string }> }) {
   const [coach, setCoach] = useState<CoachProfile | null>(null);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
+  const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [coachId, setCoachId] = useState<string | null>(null);
 
   useEffect(() => {
+    async function getParams() {
+      const resolvedParams = await params;
+      setCoachId(resolvedParams.id);
+    }
+    getParams();
+  }, [params]);
+
+  useEffect(() => {
+    if (!coachId) return;
+
+    // Create a type-safe version of coachId
+    const validCoachId: string = coachId;
+
     async function fetchCoachData() {
       try {
         setLoading(true);
@@ -90,7 +108,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
         const { data: userdata, error: userError } = await supabase
           .from('profiles')
           .select('id, name, email, role')
-          .eq('id', params.id)
+          .eq('id', validCoachId)
           .eq('role', 'coach')
           .single();
 
@@ -102,7 +120,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
 
         setUserInfo(userdata);
 
-        // Then get detailed profile info from user_profiles with coach_profiles joined
+        // Get detailed profile info from user_profiles with coach_profiles joined
         const { data: coachData, error: coachError } = await supabase
           .from('user_profiles')
           .select(`
@@ -124,7 +142,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
               subscription_active
             )
           `)
-          .eq('prof_id', params.id)
+          .eq('prof_id', validCoachId)
           .single();
 
         if (coachError) {
@@ -140,64 +158,10 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
 
         setCoach(coachData);
 
-        // Fetch reviews/testimonials for this coach - Updated query
-        const { data: reviewsData, error: reviewsError } = await supabase
-          .from('sessions')
-          .select(`
-            id,
-            student_id,
-            created_at,
-            user_profiles!sessions_student_id_fkey (
-              prof_id,
-              avatar_url
-            )
-          `)
-          .eq('coach_id', params.id)
-          .eq('status', 'completed')
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (reviewsError) {
-          console.error('Error fetching reviews:', reviewsError);
-        } else {
-          // We need to get student names from the profiles table
-          const studentIds = reviewsData?.map(session => session.student_id) || [];
-          
-          if (studentIds.length > 0) {
-            const { data: studentNames } = await supabase
-              .from('profiles')
-              .select('id, name')
-              .in('id', studentIds);
-              const { data: studentAvatars } = await supabase
-              .from('user_profiles')
-              .select('prof_id, avatar_url')
-              .in('prof_id', studentIds);
-
-              const transformedReviews = reviewsData?.map((session): Review => {
-                const studentName = studentNames?.find(s => s.id === session.student_id)?.name || 'Anonymous';
-                const studentAvatar = studentAvatars?.find(s => s.prof_id === session.student_id)?.avatar_url || null; // Changed to null
-                
-                return {
-                  id: session.id,
-                  student_name: studentName,
-                  student_avatar: studentAvatar,
-                  rating: 5,
-                  date: session.created_at,
-                  content: 'Great session!'
-                };
-              }) || [];
-            
-            setReviews(transformedReviews);
-          }
-        }
-
-        // For availability, you might want to create a separate table
-        // For now, we'll use a default schedule
-        setAvailability([
-          { day: "Monday", startTime: "09:00", endTime: "17:00" },
-          { day: "Wednesday", startTime: "09:00", endTime: "17:00" },
-          { day: "Friday", startTime: "09:00", endTime: "15:00" },
-        ]);
+        // Fetch additional data using the type-safe validCoachId
+        await fetchTestimonials(validCoachId);
+        await fetchAvailability(validCoachId);
+        await fetchSessionStats(validCoachId, coachData); // Pass coachData to the function
 
       } catch (err) {
         console.error('Unexpected error:', err);
@@ -207,8 +171,131 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
       }
     }
 
+    async function fetchTestimonials(safeCoachId: string) {
+      try {
+        // Get testimonials that mention this coach or are from students who had sessions with this coach
+        const { data: testimonials, error: testimonialsError } = await supabase
+          .from('testimonials')
+          .select(`
+            id,
+            text,
+            author_name,
+            author_title,
+            rating,
+            approved,
+            created_at,
+            author_id
+          `)
+          .eq('approved', true)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (testimonialsError) {
+          console.error('Error fetching testimonials:', testimonialsError);
+          return;
+        }
+
+        if (testimonials && testimonials.length > 0) {
+          // Get author avatars - filter out null author_ids
+          const authorIds = testimonials
+            .map(t => t.author_id)
+            .filter((id): id is string => id !== null);
+
+          let authorProfiles: { prof_id: string; avatar_url: string | null; }[] = [];
+          
+          if (authorIds.length > 0) {
+            const { data: profiles } = await supabase
+              .from('user_profiles')
+              .select('prof_id, avatar_url')
+              .in('prof_id', authorIds);
+            
+            authorProfiles = profiles || [];
+          }
+
+          const transformedReviews: Review[] = testimonials.map(testimonial => ({
+            id: testimonial.id,
+            text: testimonial.text,
+            author_name: testimonial.author_name,
+            author_title: testimonial.author_title,
+            rating: testimonial.rating,
+            approved: testimonial.approved ?? true,
+            created_at: testimonial.created_at,
+            author_avatar: authorProfiles?.find(p => p.prof_id === testimonial.author_id)?.avatar_url || null
+          }));
+
+          setReviews(transformedReviews);
+        }
+      } catch (error) {
+        console.error('Error fetching testimonials:', error);
+      }
+    }
+
+    async function fetchAvailability(safeCoachId: string) {
+      try {
+        // Fetch real availability from coach_availability table
+        const { data: availabilityData, error: availabilityError } = await supabase
+          .from('coach_availability')
+          .select(`
+            id,
+            day_of_week,
+            start_time,
+            end_time,
+            status,
+            notes
+          `)
+          .eq('coach_id', safeCoachId)
+          .eq('status', 'available')
+          .order('day_of_week', { ascending: true });
+
+        if (availabilityError) {
+          console.error('Error fetching availability:', availabilityError);
+          return;
+        }
+
+        if (availabilityData) {
+          setAvailability(availabilityData);
+        }
+      } catch (error) {
+        console.error('Error fetching availability:', error);
+      }
+    }
+
+    async function fetchSessionStats(safeCoachId: string, currentCoachData: CoachProfile) {
+      try {
+        // Get session statistics
+        const { data: sessions, error: sessionsError } = await supabase
+          .from('sessions')
+          .select('id, status')
+          .eq('coach_id', safeCoachId);
+
+        if (sessionsError) {
+          console.error('Error fetching session stats:', sessionsError);
+          return;
+        }
+
+        if (sessions) {
+          const totalSessions = sessions.length;
+          const completedSessions = sessions.filter(s => s.status === 'completed').length;
+          
+          setSessionStats({
+            total_sessions: totalSessions,
+            completed_sessions: completedSessions,
+            avg_rating: currentCoachData.coach_profiles?.rating || 0
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching session stats:', error);
+      }
+    }
+
     fetchCoachData();
-  }, [params.id]);
+  }, [coachId]);
+
+  // Helper function to convert day number to day name
+  const getDayName = (dayOfWeek: number): string => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[dayOfWeek] || 'Unknown';
+  };
 
   if (loading) {
     return (
@@ -325,6 +412,12 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                           }
                         </span>
                       </li>
+                      {sessionStats && (
+                        <li className="flex items-start">
+                          <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 mr-2"></div>
+                          <span>{sessionStats.completed_sessions} sessions completed</span>
+                        </li>
+                      )}
                     </ul>
                   </CardContent>
                 </Card>
@@ -369,14 +462,15 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                           <div className="flex items-center gap-3">
                             <Avatar className="h-10 w-10">
                               <AvatarImage
-                                src={review.student_avatar ?? undefined}
-                                alt={review.student_name}
+                                src={review.author_avatar ?? undefined}
+                                alt={review.author_name}
                               />
-                              <AvatarFallback>{review.student_name.charAt(0)}</AvatarFallback>
+                              <AvatarFallback>{review.author_name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <div>
-                              <CardTitle className="text-base">{review.student_name}</CardTitle>
-                              <CardDescription>{new Date(review.date).toLocaleDateString()}</CardDescription>
+                              <CardTitle className="text-base">{review.author_name}</CardTitle>
+                              <CardDescription>{review.author_title}</CardDescription>
+                              <CardDescription className="text-xs">{new Date(review.created_at).toLocaleDateString()}</CardDescription>
                             </div>
                           </div>
                           <div className="flex">
@@ -387,7 +481,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-sm text-muted-foreground">{review.content}</p>
+                        <p className="text-sm text-muted-foreground">{review.text}</p>
                       </CardContent>
                     </Card>
                   ))
@@ -409,17 +503,26 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ul className="space-y-3">
-                    {availability.map((slot, index) => (
-                      <li key={index} className="flex items-center p-2 rounded-md border bg-background">
-                        <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
-                        <span className="font-medium w-24">{slot.day}:</span>
-                        <span className="text-muted-foreground">
-                          {slot.startTime} - {slot.endTime}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  {availability.length > 0 ? (
+                    <ul className="space-y-3">
+                      {availability.map((slot) => (
+                        <li key={slot.id} className="flex items-center p-2 rounded-md border bg-background">
+                          <Calendar className="h-4 w-4 mr-2 text-muted-foreground" />
+                          <span className="font-medium w-24">{getDayName(slot.day_of_week)}:</span>
+                          <span className="text-muted-foreground">
+                            {slot.start_time} - {slot.end_time}
+                          </span>
+                          {slot.notes && (
+                            <span className="text-xs text-muted-foreground ml-2">({slot.notes})</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">
+                      No availability schedule set. Contact the coach to arrange a session.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

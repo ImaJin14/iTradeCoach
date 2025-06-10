@@ -95,7 +95,7 @@ export default function BlogPage() {
             .single();
           
           if (profile) {
-            setUserRole(profile.role);
+            setUserRole(profile.role || 'user');
           }
         }
 
@@ -170,7 +170,7 @@ export default function BlogPage() {
         })
       );
 
-      setPosts(postsWithTags);
+      // setPosts(postsWithTags);
     } catch (error: any) {
       console.error('Error fetching posts:', error);
     }

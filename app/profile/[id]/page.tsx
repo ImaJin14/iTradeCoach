@@ -41,14 +41,27 @@ interface StudentProfile extends UserProfile {
   courses_completed: string[];
 }
 
-export default function UserProfilePage({ params }: { params: { id: string } }) {
+export default function UserProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const [profile, setProfile] = useState<UserProfile | CoachProfile | StudentProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userId, setUserId] = useState<string>('');
   const router = useRouter();
   const { toast } = useToast();
 
   useEffect(() => {
+    async function initializeComponent() {
+      // Await the params Promise
+      const resolvedParams = await params;
+      setUserId(resolvedParams.id);
+    }
+
+    initializeComponent();
+  }, [params]);
+
+  useEffect(() => {
+    if (!userId) return; // Wait for userId to be set
+
     async function checkAccessAndLoadProfile() {
       try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -91,7 +104,7 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
         const { data: basicProfile, error: profileError } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', params.id)
+          .eq('id', userId)
           .single();
 
         if (profileError) throw profileError;
@@ -103,7 +116,7 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
           const { data: coachData, error: coachError } = await supabase
             .from('coach_profiles')
             .select('*')
-            .eq('coach_id', params.id)
+            .eq('coach_id', userId)
             .single();
 
           if (coachError) throw coachError;
@@ -116,7 +129,7 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
           const { data: studentData, error: studentError } = await supabase
             .from('student_profiles')
             .select('*')
-            .eq('student_id', params.id)
+            .eq('student_id', userId)
             .single();
 
           if (studentError) throw studentError;
@@ -139,7 +152,7 @@ export default function UserProfilePage({ params }: { params: { id: string } }) 
     }
 
     checkAccessAndLoadProfile();
-  }, [params.id, router, toast]);
+  }, [userId, router, toast]);
 
   if (loading) {
     return (

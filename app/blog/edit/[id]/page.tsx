@@ -150,7 +150,7 @@ export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
           .single();
         
         if (profile) {
-          setUserRole(profile.role);
+          setUserRole(profile.role || '');
         }
 
         await Promise.all([

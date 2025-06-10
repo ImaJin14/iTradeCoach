@@ -90,7 +90,7 @@ export default function StudentsPage() {
 
   async function fetchStudents(coachId: string) {
     try {
-      // First, get sessions for this coach
+      // Get sessions for this coach to find their students
       const { data: sessionData, error: sessionError } = await supabase
         .from('sessions')
         .select(`
@@ -111,26 +111,32 @@ export default function StudentsPage() {
         return;
       }
   
-      // Get student profiles (this links to user_profiles)
-      const { data: studentProfiles, error: profileError } = await supabase
+      // Get student profiles separately
+      const { data: studentProfiles, error: studentProfileError } = await supabase
         .from('student_profiles')
         .select(`
           student_id,
           current_level,
-          tokens_earned,
-          user_profiles!student_profiles_student_id_fkey (
-            prof_id,
-            avatar_url,
-            bio,
-            created_at
-          )
+          tokens_earned
         `)
         .in('student_id', studentIds);
   
-      if (profileError) throw profileError;
+      if (studentProfileError) throw studentProfileError;
+
+      // Get user profiles separately  
+      const { data: userProfiles, error: userProfileError } = await supabase
+        .from('user_profiles')
+        .select(`
+          prof_id,
+          avatar_url,
+          created_at
+        `)
+        .in('prof_id', studentIds);
   
-      // Get user profiles (for name and email from profiles table)
-      const { data: userProfiles, error: userError } = await supabase
+      if (userProfileError) throw userProfileError;
+
+      // Get basic profiles separately
+      const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select(`
           id,
@@ -139,35 +145,41 @@ export default function StudentsPage() {
         `)
         .in('id', studentIds);
   
-      if (userError) throw userError;
+      if (profilesError) throw profilesError;
   
-      // Combine data and calculate stats
+      // Calculate session stats for each student
       const studentsMap = new Map();
       
-      sessionData?.forEach(session => {
-        const studentId = session.student_id;
-        if (!studentsMap.has(studentId)) {
-          const profile = studentProfiles?.find(p => p.student_id === studentId);
-          const userProfile = userProfiles?.find(u => u.id === studentId);
-          
+      // Initialize students with their profile data
+      studentIds.forEach(studentId => {
+        const studentProfile = studentProfiles?.find(sp => sp.student_id === studentId);
+        const userProfile = userProfiles?.find(up => up.prof_id === studentId);
+        const profile = profiles?.find(p => p.id === studentId);
+
+        if (profile) {
           studentsMap.set(studentId, {
             id: studentId,
-            name: userProfile?.name || 'Unknown',
-            email: userProfile?.email || 'Unknown',
-            avatar_url: profile?.user_profiles?.avatar_url || null,
-            created_at: profile?.user_profiles?.created_at || new Date().toISOString(),
-            current_level: profile?.current_level || 'beginner',
-            tokens_earned: profile?.tokens_earned || 0,
+            name: profile.name || 'Unknown',
+            email: profile.email || 'Unknown',
+            avatar_url: userProfile?.avatar_url || null,
+            created_at: userProfile?.created_at || new Date().toISOString(),
+            current_level: studentProfile?.current_level || 'beginner',
+            tokens_earned: studentProfile?.tokens_earned || 0,
             sessions_completed: 0,
             last_session: null
           });
         }
-  
-        const student = studentsMap.get(studentId);
-        if (session.status === 'completed') {
-          student.sessions_completed += 1;
-          if (!student.last_session || session.created_at > student.last_session) {
-            student.last_session = session.created_at;
+      });
+
+      // Calculate session statistics
+      sessionData?.forEach(session => {
+        const student = studentsMap.get(session.student_id);
+        if (student) {
+          if (session.status === 'completed') {
+            student.sessions_completed += 1;
+            if (!student.last_session || session.created_at > student.last_session) {
+              student.last_session = session.created_at;
+            }
           }
         }
       });
@@ -180,6 +192,7 @@ export default function StudentsPage() {
         description: "Failed to load students. Please try again.",
         variant: "destructive",
       });
+      setStudents([]);
     }
   }
 

@@ -10,9 +10,26 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/lib/supabase";
 
+interface CoachData {
+  coach_id: string;
+  expertise_areas: string[] | null;
+  hourly_rate: number | null;
+  rating: number | null;
+  total_students: number | null;
+  verification_status: string;
+  user_profiles: {
+    avatar_url: string | null;
+    bio: string | null;
+  } | null;
+  profiles: {
+    name: string | null;
+    email: string | null;
+  } | null;
+}
+
 export default function CoachShowcase() {
   const [hoveredCoach, setHoveredCoach] = useState<string | null>(null);
-  const [coaches, setCoaches] = useState<any[]>([]);
+  const [coaches, setCoaches] = useState<CoachData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,22 +38,33 @@ export default function CoachShowcase() {
         const { data, error } = await supabase
           .from('coach_profiles')
           .select(`
-            *,
-            profiles!coach_profiles_coach_id_fkey (
-              name,
-              email
-            ),
-            user_profiles!coach_profiles_coach_id_fkey (
+            coach_id,
+            expertise_areas,
+            hourly_rate,
+            rating,
+            total_students,
+            verification_status,
+            user_profiles!coach_id (
               avatar_url,
               bio
+            ),
+            profiles!coach_id (
+              name,
+              email
             )
           `)
           .eq('verification_status', 'verified')
           .order('rating', { ascending: false })
           .limit(3);
 
-        if (error) throw error;
-        setCoaches(data || []);
+        if (error) {
+          console.error('Supabase error:', error);
+          throw error;
+        }
+        
+        // if (data) {
+        //   setCoaches(data);
+        // }
       } catch (error) {
         console.error('Error fetching featured coaches:', error);
       } finally {
@@ -74,6 +102,15 @@ export default function CoachShowcase() {
     );
   }
 
+  if (coaches.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <h3 className="font-medium text-lg mb-2">No featured coaches available</h3>
+        <p className="text-muted-foreground">Check back soon for our featured coaches</p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid md:grid-cols-3 gap-6">
       {coaches.map((coach) => (
@@ -85,10 +122,10 @@ export default function CoachShowcase() {
           onMouseEnter={() => setHoveredCoach(coach.coach_id)}
           onMouseLeave={() => setHoveredCoach(null)}
         >
-          <div className="relative h-48 w-full">
+          <div className="relative h-48 w-full bg-gradient-to-br from-primary/10 to-blue-600/10">
             <Image
-              src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`}
-              alt={coach.profiles.name}
+              src={coach.user_profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`}
+              alt={coach.profiles?.name || 'Coach'}
               fill
               className="object-cover"
               sizes="(max-width: 768px) 100vw, 33vw"
@@ -99,29 +136,43 @@ export default function CoachShowcase() {
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10 border-2 border-white">
                   <AvatarImage 
-                    src={coach.profiles.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`} 
-                    alt={coach.profiles.name} 
+                    src={coach.user_profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`} 
+                    alt={coach.profiles?.name || 'Coach'} 
                   />
-                  <AvatarFallback>{coach.profiles.name.charAt(0)}</AvatarFallback>
+                  <AvatarFallback>
+                    {coach.profiles?.name?.charAt(0) || 'C'}
+                  </AvatarFallback>
                 </Avatar>
                 <div>
-                  <CardTitle className="text-lg">{coach.profiles.name}</CardTitle>
+                  <CardTitle className="text-lg">
+                    {coach.profiles?.name || 'Unknown Coach'}
+                  </CardTitle>
                   <div className="flex items-center mt-1">
                     <StarIcon className="h-4 w-4 fill-yellow-400 text-yellow-400 mr-1" />
-                    <span className="text-sm font-medium">{coach.rating}</span>
-                    <span className="text-sm text-muted-foreground ml-1">({coach.total_students} sessions)</span>
+                    <span className="text-sm font-medium">{coach.rating || 0}</span>
+                    <span className="text-sm text-muted-foreground ml-1">
+                      ({coach.total_students || 0} students)
+                    </span>
                   </div>
                 </div>
               </div>
-              <Badge variant="outline" className="font-medium">${coach.hourly_rate}/hr</Badge>
+              <Badge variant="outline" className="font-medium">
+                ${coach.hourly_rate || 0}/hr
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="py-2">
-            <p className="text-sm text-muted-foreground line-clamp-2">{coach.bio}</p>
+            <p className="text-sm text-muted-foreground line-clamp-2">
+              {coach.user_profiles?.bio || 'No bio available'}
+            </p>
             <div className="flex flex-wrap gap-1 mt-3">
-              {coach.expertise_areas?.map((tag: string) => (
-                <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
-              ))}
+              {coach.expertise_areas?.map((tag, index) => (
+                <Badge key={`${coach.coach_id}-${tag}-${index}`} variant="secondary" className="text-xs">
+                  {tag}
+                </Badge>
+              )) || (
+                <span className="text-xs text-muted-foreground">No expertise listed</span>
+              )}
             </div>
           </CardContent>
           <CardFooter className="pt-2 pb-4">

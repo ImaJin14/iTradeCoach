@@ -9,24 +9,51 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
+// Updated interface to match schema with nullable fields
 interface SubscriptionPlan {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   price: number;
   interval: string;
-  role: string;
+  role: 'student' | 'coach' | 'admin';
   features: string[];
+  created_at: string | null;
+  updated_at: string | null;
 }
 
+// Updated to handle nullable fields from database
 interface UserProfile {
-  role: string;
-  subscription_status: string;
+  id: string;
+  role: 'student' | 'coach' | 'admin';
+  subscription_status: 'none' | 'active' | 'past_due' | 'canceled';
+}
+
+interface UserSubscription {
+  id: string;
+  plan_id: string;
+  status: 'active' | 'canceled' | 'past_due';
+  current_period_end: string;
+}
+
+// Raw database types (with nullable fields)
+interface RawUserProfile {
+  id: string;
+  role: string | null;
+  subscription_status: string | null;
+}
+
+interface RawUserSubscription {
+  id: string;
+  plan_id: string | null;
+  status: string;
+  current_period_end: string;
 }
 
 export default function PricingPage() {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userSubscription, setUserSubscription] = useState<UserSubscription | null>(null);
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState<string | null>(null);
   const router = useRouter();
@@ -45,15 +72,67 @@ export default function PricingPage() {
         }
 
         // Get user profile
-        const { data: profile, error: profileError } = await supabase
+        const { data: rawProfile, error: profileError } = await supabase
           .from('profiles')
-          .select('role, subscription_status')
+          .select('id, role, subscription_status')
           .eq('id', user.id)
-          .single();
+          .single() as { data: RawUserProfile | null; error: any };
 
         if (profileError) throw profileError;
 
+        // Validate and transform the profile data
+        if (!rawProfile || !rawProfile.role) {
+          throw new Error('Invalid profile data');
+        }
+
+        // Type guard to ensure role is valid
+        const validRoles = ['student', 'coach', 'admin'] as const;
+        if (!validRoles.includes(rawProfile.role as any)) {
+          throw new Error('Invalid user role');
+        }
+
+        // Type guard to ensure subscription_status is valid
+        const validStatuses = ['none', 'active', 'past_due', 'canceled'] as const;
+        const subscriptionStatus = validStatuses.includes(rawProfile.subscription_status as any) 
+          ? rawProfile.subscription_status as 'none' | 'active' | 'past_due' | 'canceled'
+          : 'none';
+
+        const profile: UserProfile = {
+          id: rawProfile.id,
+          role: rawProfile.role as 'student' | 'coach' | 'admin',
+          subscription_status: subscriptionStatus
+        };
+
         setUserProfile(profile);
+
+        // Get user's current subscription
+        const { data: rawSubscription, error: subscriptionError } = await supabase
+          .from('subscriptions')
+          .select('id, plan_id, status, current_period_end')
+          .eq('prof_id', user.id)
+          .eq('status', 'active')
+          .maybeSingle() as { data: RawUserSubscription | null; error: any };
+
+        if (subscriptionError && subscriptionError.code !== 'PGRST116') {
+          throw subscriptionError;
+        }
+
+        // Transform subscription data if it exists
+        if (rawSubscription && rawSubscription.plan_id) {
+          const validSubscriptionStatuses = ['active', 'canceled', 'past_due'] as const;
+          const subscriptionStatus = validSubscriptionStatuses.includes(rawSubscription.status as any)
+            ? rawSubscription.status as 'active' | 'canceled' | 'past_due'
+            : 'active';
+
+          const subscription: UserSubscription = {
+            id: rawSubscription.id,
+            plan_id: rawSubscription.plan_id,
+            status: subscriptionStatus,
+            current_period_end: rawSubscription.current_period_end
+          };
+
+          setUserSubscription(subscription);
+        }
         
         // Fetch plans based on user role
         await fetchPlans(profile.role);
@@ -64,6 +143,8 @@ export default function PricingPage() {
           description: "Failed to load pricing information. Please try again.",
           variant: "destructive",
         });
+        // Fallback to student plans if there's an error
+        await fetchPlans('student');
       } finally {
         setLoading(false);
       }
@@ -72,8 +153,9 @@ export default function PricingPage() {
     loadData();
   }, [toast]);
 
-  async function fetchPlans(role: string) {
+  async function fetchPlans(role: 'student' | 'coach' | 'admin') {
     try {
+      // Raw type from database
       const { data, error } = await supabase
         .from('subscription_plans')
         .select('*')
@@ -82,14 +164,20 @@ export default function PricingPage() {
 
       if (error) throw error;
 
-      const formattedPlans = data?.map(plan => ({
+      // Transform raw data to properly typed plans
+      const formattedPlans: SubscriptionPlan[] = data?.map(plan => ({
         id: plan.id,
         name: plan.name,
         description: plan.description,
         price: plan.price,
         interval: plan.interval,
         role: plan.role,
-        features: plan.features || []
+        // Safely handle JSONB features field
+        features: Array.isArray(plan.features) 
+          ? plan.features.filter(f => typeof f === 'string')
+          : [],
+        created_at: plan.created_at,
+        updated_at: plan.updated_at
       })) || [];
 
       setPlans(formattedPlans);
@@ -106,7 +194,8 @@ export default function PricingPage() {
 
     setSubscribing(planId);
     try {
-      // TODO: Implement actual subscription logic
+      // TODO: Implement actual subscription logic with Stripe/payment processing
+      // This should create a new subscription record in the database
       toast({
         title: "Coming Soon",
         description: "Subscription functionality will be available soon. Please contact support for now.",
@@ -123,10 +212,11 @@ export default function PricingPage() {
   }
 
   const getPlanIcon = (planName: string) => {
-    if (planName.toLowerCase().includes('basic') || planName.toLowerCase().includes('monthly')) {
+    const name = planName.toLowerCase();
+    if (name.includes('monthly') || name.includes('basic')) {
       return <Zap className="h-6 w-6" />;
     }
-    if (planName.toLowerCase().includes('pro') || planName.toLowerCase().includes('yearly')) {
+    if (name.includes('yearly') || name.includes('annual')) {
       return <Crown className="h-6 w-6" />;
     }
     return <Star className="h-6 w-6" />;
@@ -136,20 +226,22 @@ export default function PricingPage() {
     if (plan.interval === 'year') {
       return <Badge className="bg-green-500 hover:bg-green-600">Save 20%</Badge>;
     }
-    if (plan.name.toLowerCase().includes('pro')) {
-      return <Badge variant="secondary">Most Popular</Badge>;
+    if (plan.name.toLowerCase().includes('yearly')) {
+      return <Badge className="bg-green-500 hover:bg-green-600">Best Value</Badge>;
     }
     return null;
   };
 
   const getButtonText = (plan: SubscriptionPlan) => {
     if (!userProfile) return "Get Started";
-    if (userProfile.subscription_status === 'active') return "Current Plan";
-    return subscribing === plan.id ? "Processing..." : "Subscribe Now";
+    if (isCurrentPlan(plan)) return "Current Plan";
+    if (subscribing === plan.id) return "Processing...";
+    return "Subscribe Now";
   };
 
+  // Fixed: Properly check if this is the user's current plan
   const isCurrentPlan = (plan: SubscriptionPlan) => {
-    return userProfile?.subscription_status === 'active';
+    return userSubscription?.plan_id === plan.id && userSubscription?.status === 'active';
   };
 
   const formatPrice = (plan: SubscriptionPlan) => {
@@ -199,16 +291,30 @@ export default function PricingPage() {
         )}
       </div>
 
+      {/* Show current subscription info if user has one */}
+      {userSubscription && (
+        <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 max-w-2xl mx-auto text-center">
+          <p className="text-primary font-medium">
+            Current Plan: {plans.find(p => p.id === userSubscription.plan_id)?.name}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Next billing: {new Date(userSubscription.current_period_end).toLocaleDateString()}
+          </p>
+        </div>
+      )}
+
       {/* Centered plans container */}
       <div className="flex justify-center">
         <div className="grid md:grid-cols-2 gap-8 max-w-4xl">
           {plans.map((plan) => {
             const priceInfo = formatPrice(plan);
+            const isCurrentUserPlan = isCurrentPlan(plan);
+            
             return (
               <Card 
                 key={plan.id} 
                 className={`relative overflow-hidden transition-all duration-300 hover:shadow-lg ${
-                  isCurrentPlan(plan) ? 'ring-2 ring-primary' : ''
+                  isCurrentUserPlan ? 'ring-2 ring-primary' : ''
                 } ${plan.interval === 'year' ? 'border-green-200 dark:border-green-800' : ''}`}
               >
                 {getPlanBadge(plan) && (
@@ -221,7 +327,9 @@ export default function PricingPage() {
                     {getPlanIcon(plan.name)}
                   </div>
                   <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                  <CardDescription className="text-base">{plan.description}</CardDescription>
+                  <CardDescription className="text-base">
+                    {plan.description}
+                  </CardDescription>
                   <div className="mt-4">
                     <span className="text-4xl font-bold">{priceInfo.display}</span>
                     <span className="text-muted-foreground">{priceInfo.period}</span>
@@ -246,8 +354,8 @@ export default function PricingPage() {
                   <Button 
                     className="w-full" 
                     onClick={() => handleSubscribe(plan.id)}
-                    disabled={subscribing === plan.id || isCurrentPlan(plan)}
-                    variant={isCurrentPlan(plan) ? "secondary" : plan.interval === 'year' ? "default" : "outline"}
+                    disabled={subscribing === plan.id || isCurrentUserPlan}
+                    variant={isCurrentUserPlan ? "secondary" : plan.interval === 'year' ? "default" : "outline"}
                   >
                     {getButtonText(plan)}
                   </Button>
@@ -296,48 +404,46 @@ export default function PricingPage() {
       <div className="text-center space-y-4 pt-8">
         <h2 className="text-2xl font-bold">Frequently Asked Questions</h2>
         <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto text-left">
-          <>
-            {(userProfile?.role === 'coach' ? [
-              {
-                q: "Why do coaches need a subscription?",
-                a: "Subscriptions help us maintain platform quality, provide professional tools, and ensure serious commitment from coaches."
-              },
-              {
-                q: "Can I cancel my subscription anytime?",
-                a: "Yes, you can cancel anytime. Your access will continue until the end of your current billing period."
-              },
-              {
-                q: "What happens if I don't subscribe?",
-                a: "Without a subscription, you won't be able to accept new students or access coaching features on the platform."
-              },
-              {
-                q: "Do you offer refunds?",
-                a: "Yes, we offer a 14-day money-back guarantee if you're not satisfied with our service."
-              }
-            ] : [
-              {
-                q: "Can I switch plans later?",
-                a: "Yes, you can upgrade or downgrade your plan at any time. Changes will be reflected in your next billing cycle."
-              },
-              {
-                q: "What payment methods do you accept?",
-                a: "We accept all major credit cards, cryptocurrency payments, and bank transfers for enterprise plans."
-              },
-              {
-                q: "Is there a refund policy?",
-                a: "Yes, we offer a 14-day money-back guarantee if you're not satisfied with our service."
-              },
-              {
-                q: "Do you offer custom plans?",
-                a: "Yes, our enterprise plan can be customized to meet your specific needs. Contact our sales team for details."
-              }
-            ]).map((faq, i) => (
-              <div key={i} className="space-y-2">
-                <h3 className="font-medium">{faq.q}</h3>
-                <p className="text-muted-foreground">{faq.a}</p>
-              </div>
-            ))}
-          </>
+          {(userProfile?.role === 'coach' ? [
+            {
+              q: "Why do coaches need a subscription?",
+              a: "Subscriptions help us maintain platform quality, provide professional tools, and ensure serious commitment from coaches."
+            },
+            {
+              q: "Can I cancel my subscription anytime?",
+              a: "Yes, you can cancel anytime. Your access will continue until the end of your current billing period."
+            },
+            {
+              q: "What happens if I don't subscribe?",
+              a: "Without a subscription, you won't be able to accept new students or access coaching features on the platform."
+            },
+            {
+              q: "Do you offer refunds?",
+              a: "Yes, we offer a 14-day money-back guarantee if you're not satisfied with our service."
+            }
+          ] : [
+            {
+              q: "Can I switch plans later?",
+              a: "Yes, you can upgrade or downgrade your plan at any time. Changes will be reflected in your next billing cycle."
+            },
+            {
+              q: "What payment methods do you accept?",
+              a: "We accept all major credit cards, cryptocurrency payments, and bank transfers for enterprise plans."
+            },
+            {
+              q: "Is there a refund policy?",
+              a: "Yes, we offer a 14-day money-back guarantee if you're not satisfied with our service."
+            },
+            {
+              q: "Do you offer custom plans?",
+              a: "Yes, our enterprise plan can be customized to meet your specific needs. Contact our sales team for details."
+            }
+          ]).map((faq, i) => (
+            <div key={i} className="space-y-2">
+              <h3 className="font-medium">{faq.q}</h3>
+              <p className="text-muted-foreground">{faq.a}</p>
+            </div>
+          ))}
         </div>
       </div>
     </div>
