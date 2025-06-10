@@ -105,26 +105,69 @@ export default function AdminSessionsPage() {
           status,
           price,
           notes,
-          coach:coach_id (
-            id,
-            name,
-            avatar_url
+          coach_profiles!sessions_coach_id_fkey (
+            coach_id,
+            user_profiles!coach_profiles_coach_id_fkey (
+              prof_id,
+              avatar_url
+            )
           ),
-          student:student_id (
-            id,
-            name,
-            avatar_url
+          student_profiles!sessions_student_id_fkey (
+            student_id,
+            user_profiles!student_profiles_student_id_fkey (
+              prof_id,
+              avatar_url
+            )
           )
         `)
         .order('scheduled_time', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
       
-      // Map the data to ensure coach and student are single objects, not arrays
+      // Get user profiles separately to get names
+      const userIds = new Set<string>();
+      data?.forEach(session => {
+        if (session.coach_profiles?.user_profiles?.prof_id) {
+          userIds.add(session.coach_profiles.user_profiles.prof_id);
+        }
+        if (session.student_profiles?.user_profiles?.prof_id) {
+          userIds.add(session.student_profiles.user_profiles.prof_id);
+        }
+      });
+
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, name')
+        .in('id', Array.from(userIds));
+
+      if (profilesError) {
+        console.error('Profiles error:', profilesError);
+        throw profilesError;
+      }
+
+      const profilesMap = new Map(profiles?.map(p => [p.id, p.name]) || []);
+      
+      // Map the data to the expected format
       const mappedSessions = (data || []).map((session: any) => ({
-        ...session,
-        coach: Array.isArray(session.coach) ? session.coach[0] : session.coach,
-        student: Array.isArray(session.student) ? session.student[0] : session.student,
+        id: session.id,
+        scheduled_time: session.scheduled_time,
+        duration: session.duration,
+        status: session.status,
+        price: session.price || 0,
+        notes: session.notes,
+        coach: {
+          id: session.coach_profiles?.coach_id || '',
+          name: profilesMap.get(session.coach_profiles?.user_profiles?.prof_id) || 'Unknown Coach',
+          avatar_url: session.coach_profiles?.user_profiles?.avatar_url || null,
+        },
+        student: {
+          id: session.student_profiles?.student_id || '',
+          name: profilesMap.get(session.student_profiles?.user_profiles?.prof_id) || 'Unknown Student',
+          avatar_url: session.student_profiles?.user_profiles?.avatar_url || null,
+        },
       }));
       
       setSessions(mappedSessions);

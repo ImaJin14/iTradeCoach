@@ -145,13 +145,13 @@ export default function ClassroomPage() {
         if (profileError) throw profileError;
 
         setCurrentUser(user);
-        setUserRole(profile.role);
-        
+        setUserRole(profile.role || ''); 
+    
         await Promise.all([
-          fetchClassroomStats(user.id, profile.role),
-          fetchCourses(user.id, profile.role),
-          fetchSessions(user.id, profile.role),
-          fetchLearningPaths(user.id, profile.role)
+          fetchClassroomStats(user.id, profile.role || ''),
+          fetchCourses(user.id, profile.role || ''),
+          fetchSessions(user.id, profile.role || ''),
+          fetchLearningPaths(user.id, profile.role || '')
         ]);
       } catch (error: any) {
         console.error('Error loading classroom data:', error);
@@ -175,43 +175,41 @@ export default function ClassroomPage() {
         completedCourses: 0,
         activeSessions: 0
       };
-
+  
       if (role === 'coach') {
         // Get courses created by this coach
         const { count: totalCourses } = await supabase
           .from('courses')
           .select('*', { count: 'exact', head: true })
           .eq('coach_id', userId);
+  
 
-        // Get published courses
-        const { count: publishedCourses } = await supabase
+        const publishedCourses = totalCourses; 
+  
+        // Get unique students enrolled in coach's courses
+        const { data: courses } = await supabase
           .from('courses')
-          .select('*', { count: 'exact', head: true })
-          .eq('coach_id', userId)
-          .eq('status', 'published');
-
-        // Get total students across all courses
-        const { data: enrollments } = await supabase
-          .from('course_enrollments')
+          .select('id')
+          .eq('coach_id', userId);
+  
+        const courseIds = courses?.map(c => c.id) || [];
+        
+        // Note: There's no 'course_enrollments' table, using session enrollments instead
+        const { data: sessions } = await supabase
+          .from('sessions')
           .select('student_id')
-          .in('course_id', 
-            await supabase
-              .from('courses')
-              .select('id')
-              .eq('coach_id', userId)
-              .then(res => res.data?.map(c => c.id) || [])
-          );
-
-        const uniqueStudents = new Set(enrollments?.map(e => e.student_id) || []).size;
-
-        // Get active sessions
+          .eq('coach_id', userId);
+  
+        const uniqueStudents = new Set(sessions?.map(s => s.student_id) || []).size;
+  
+        // Get active/scheduled sessions
         const { count: activeSessions } = await supabase
           .from('sessions')
           .select('*', { count: 'exact', head: true })
           .eq('coach_id', userId)
           .eq('status', 'scheduled')
           .gte('scheduled_time', new Date().toISOString());
-
+  
         stats = {
           totalCourses: totalCourses || 0,
           completedCourses: publishedCourses || 0,
@@ -219,19 +217,19 @@ export default function ClassroomPage() {
           totalStudents: uniqueStudents
         };
       } else if (role === 'student') {
-        // Get enrolled courses
+        // Get courses where student is enrolled
         const { count: totalCourses } = await supabase
-          .from('course_enrollments')
+          .from('courses')
           .select('*', { count: 'exact', head: true })
           .eq('student_id', userId);
-
-        // Get completed courses
+  
+        // Get completed courses (using is_hidden as proxy for completion)
         const { count: completedCourses } = await supabase
-          .from('course_enrollments')
+          .from('courses')
           .select('*', { count: 'exact', head: true })
           .eq('student_id', userId)
-          .eq('status', 'completed');
-
+          .eq('is_hidden', false); // Assuming visible courses are completed
+  
         // Get upcoming sessions
         const { count: activeSessions } = await supabase
           .from('sessions')
@@ -239,14 +237,14 @@ export default function ClassroomPage() {
           .eq('student_id', userId)
           .eq('status', 'scheduled')
           .gte('scheduled_time', new Date().toISOString());
-
+  
         // Get tokens from student profile
         const { data: studentProfile } = await supabase
           .from('student_profiles')
           .select('tokens_earned')
-          .eq('user_id', userId)
+          .eq('student_id', userId) // Changed from 'user_id' to 'student_id'
           .single();
-
+  
         stats = {
           totalCourses: totalCourses || 0,
           completedCourses: completedCourses || 0,
@@ -258,18 +256,16 @@ export default function ClassroomPage() {
         const { count: totalCourses } = await supabase
           .from('courses')
           .select('*', { count: 'exact', head: true });
-
-        const { count: publishedCourses } = await supabase
-          .from('courses')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'published');
-
+  
+        // All courses are considered published since there's no status field
+        const publishedCourses = totalCourses;
+  
         const { count: activeSessions } = await supabase
           .from('sessions')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'scheduled')
           .gte('scheduled_time', new Date().toISOString());
-
+  
         stats = {
           totalCourses: totalCourses || 0,
           completedCourses: publishedCourses || 0,

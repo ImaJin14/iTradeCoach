@@ -22,33 +22,39 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/lib/supabase";
 
+// Updated interface to match your actual database schema
 interface CoachProfile {
-  id: string;
-  name: string;
-  email: string;
-  role: "coach";
-  bio?: string;
-  avatar_url?: string;
+  prof_id: string;
+  avatar_url: string | null;
+  bio: string | null;
   profile_complete: boolean;
   created_at: string;
   coach_profiles: {
-    bio: string;
-    expertise_areas: string[];
-    hourly_rate: number;
-    video_intro_url?: string;
-    verification_status: "pending" | "verified" | "rejected";
-    algorand_wallet?: string;
-    rating: number;
-    total_students: number;
-    earnings: number;
-    subscription_active: boolean;
-  };
+    coach_id: string;
+    expertise_areas: string[] | null;
+    hourly_rate: number | null;
+    video_intro_url: string | null; 
+    verification_status: "pending" | "verified" | "rejected" | null;
+    algorand_wallet: string | null;
+    rating: number | null;
+    total_students: number | null;
+    earnings: number | null;
+    subscription_active: boolean | null;
+  } | null;
+}
+
+// We need to get user info from the profiles table separately
+interface UserInfo {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: string | null;
 }
 
 interface Review {
   id: string;
   student_name: string;
-  student_avatar?: string;
+  student_avatar: string | null; 
   rating: number;
   date: string;
   content: string;
@@ -60,45 +66,70 @@ interface AvailabilitySlot {
   endTime: string;
 }
 
-// Define the session type to match what Supabase returns
+// Updated session interface to match actual database structure
 interface SessionWithProfile {
-  id: any;
-  student_id: any;
-  created_at: any;
-  profiles: {
-    name: any;
-    avatar_url: any;
-  } | null;
+  id: string;
+  student_id: string;
+  created_at: string;
 }
 
 export default function CoachProfile({ params }: { params: { id: string } }) {
   const [coach, setCoach] = useState<CoachProfile | null>(null);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [availability, setAvailability] = useState<AvailabilitySlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Remove the duplicate supabase client creation - use the one from lib/supabase
 
   useEffect(() => {
     async function fetchCoachData() {
       try {
         setLoading(true);
         
-        // Fetch coach profile with coach_profiles joined
-        const { data: coachData, error: coachError } = await supabase
+        // First, get basic user info from profiles table
+        const { data: userdata, error: userError } = await supabase
           .from('profiles')
-          .select(`
-            *,
-            coach_profiles (*)
-          `)
+          .select('id, name, email, role')
           .eq('id', params.id)
           .eq('role', 'coach')
           .single();
 
-        if (coachError) {
-          console.error('Error fetching coach:', coachError);
+        if (userError) {
+          console.error('Error fetching user:', userError);
           setError('Coach not found');
+          return;
+        }
+
+        setUserInfo(userdata);
+
+        // Then get detailed profile info from user_profiles with coach_profiles joined
+        const { data: coachData, error: coachError } = await supabase
+          .from('user_profiles')
+          .select(`
+            prof_id,
+            avatar_url,
+            bio,
+            profile_complete,
+            created_at,
+            coach_profiles (
+              coach_id,
+              expertise_areas,
+              hourly_rate,
+              video_intro_url,
+              verification_status,
+              algorand_wallet,
+              rating,
+              total_students,
+              earnings,
+              subscription_active
+            )
+          `)
+          .eq('prof_id', params.id)
+          .single();
+
+        if (coachError) {
+          console.error('Error fetching coach profile:', coachError);
+          setError('Coach profile not found');
           return;
         }
 
@@ -107,17 +138,17 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
           return;
         }
 
-        setCoach(coachData as CoachProfile);
+        setCoach(coachData);
 
-        // Fetch reviews/testimonials for this coach
+        // Fetch reviews/testimonials for this coach - Updated query
         const { data: reviewsData, error: reviewsError } = await supabase
           .from('sessions')
           .select(`
             id,
             student_id,
             created_at,
-            profiles!sessions_student_id_fkey (
-              name,
+            user_profiles!sessions_student_id_fkey (
+              prof_id,
               avatar_url
             )
           `)
@@ -129,17 +160,35 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
         if (reviewsError) {
           console.error('Error fetching reviews:', reviewsError);
         } else {
-          // Transform session data into review format with proper typing
-          const transformedReviews = reviewsData?.map((session: SessionWithProfile): Review => ({
-            id: session.id,
-            student_name: session.profiles?.name || 'Anonymous',
-            student_avatar: session.profiles?.avatar_url,
-            rating: 5, // Default rating - you might want to add actual ratings
-            date: session.created_at,
-            content: 'Great session!' // Default content - you might want to add actual reviews
-          })) || [];
+          // We need to get student names from the profiles table
+          const studentIds = reviewsData?.map(session => session.student_id) || [];
           
-          setReviews(transformedReviews);
+          if (studentIds.length > 0) {
+            const { data: studentNames } = await supabase
+              .from('profiles')
+              .select('id, name')
+              .in('id', studentIds);
+              const { data: studentAvatars } = await supabase
+              .from('user_profiles')
+              .select('prof_id, avatar_url')
+              .in('prof_id', studentIds);
+
+              const transformedReviews = reviewsData?.map((session): Review => {
+                const studentName = studentNames?.find(s => s.id === session.student_id)?.name || 'Anonymous';
+                const studentAvatar = studentAvatars?.find(s => s.prof_id === session.student_id)?.avatar_url || null; // Changed to null
+                
+                return {
+                  id: session.id,
+                  student_name: studentName,
+                  student_avatar: studentAvatar,
+                  rating: 5,
+                  date: session.created_at,
+                  content: 'Great session!'
+                };
+              }) || [];
+            
+            setReviews(transformedReviews);
+          }
         }
 
         // For availability, you might want to create a separate table
@@ -174,9 +223,12 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
     );
   }
 
-  if (error || !coach) {
+  if (error || !coach || !userInfo) {
     return notFound();
   }
+
+  const coachName = userInfo.name || 'Unknown Coach';
+  const coachEmail = userInfo.email || '';
 
   return (
     <div className="container py-8">
@@ -196,19 +248,19 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                 {coach.avatar_url ? (
                   <Image 
                     src={coach.avatar_url} 
-                    alt={coach.name} 
+                    alt={coachName} 
                     fill 
                     className="object-cover"
                   />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
                     <span className="text-4xl font-bold text-primary">
-                      {coach.name.charAt(0)}
+                      {coachName.charAt(0)}
                     </span>
                   </div>
                 )}
               </div>
-              {coach.coach_profiles.verification_status === 'verified' && (
+              {coach.coach_profiles?.verification_status === 'verified' && (
                 <Badge className="absolute bottom-2 right-2 bg-primary text-primary-foreground">
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Verified
@@ -217,21 +269,21 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
             </div>
             
             <div className="flex-1">
-              <h1 className="text-3xl font-bold mb-2">{coach.name}</h1>
+              <h1 className="text-3xl font-bold mb-2">{coachName}</h1>
               <div className="flex items-center mb-4">
                 <Star className="h-5 w-5 fill-yellow-400 text-yellow-400 mr-1" />
-                <span className="font-medium">{coach.coach_profiles.rating.toFixed(1)}</span>
-                <span className="text-muted-foreground ml-1">({coach.coach_profiles.total_students} students)</span>
-                <Badge variant="outline" className="ml-4">${coach.coach_profiles.hourly_rate}/hr</Badge>
+                <span className="font-medium">{(coach.coach_profiles?.rating || 0).toFixed(1)}</span>
+                <span className="text-muted-foreground ml-1">({coach.coach_profiles?.total_students || 0} students)</span>
+                <Badge variant="outline" className="ml-4">${coach.coach_profiles?.hourly_rate || 0}/hr</Badge>
               </div>
               
               <div className="flex flex-wrap gap-2 mb-4">
-                {coach.coach_profiles.expertise_areas.map(area => (
+                {coach.coach_profiles?.expertise_areas?.map(area => (
                   <Badge key={area} variant="secondary">{area}</Badge>
-                ))}
+                )) || []}
               </div>
               
-              <p className="text-muted-foreground">{coach.coach_profiles.bio || coach.bio}</p>
+              <p className="text-muted-foreground">{coach.bio}</p>
             </div>
           </div>
           
@@ -254,11 +306,11 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                     <ul className="space-y-2">
                       <li className="flex items-start">
                         <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 mr-2"></div>
-                        <span>Expertise in {coach.coach_profiles.expertise_areas.join(', ')}</span>
+                        <span>Expertise in {coach.coach_profiles?.expertise_areas?.join(', ') || 'Various areas'}</span>
                       </li>
                       <li className="flex items-start">
                         <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 mr-2"></div>
-                        <span>{coach.coach_profiles.total_students} students taught</span>
+                        <span>{coach.coach_profiles?.total_students || 0} students taught</span>
                       </li>
                       <li className="flex items-start">
                         <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 mr-2"></div>
@@ -267,7 +319,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                       <li className="flex items-start">
                         <div className="h-1.5 w-1.5 rounded-full bg-primary mt-1.5 mr-2"></div>
                         <span>
-                          {coach.coach_profiles.verification_status === 'verified' 
+                          {coach.coach_profiles?.verification_status === 'verified' 
                             ? 'Verified Coach' 
                             : 'Verification Pending'
                           }
@@ -316,7 +368,10 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-3">
                             <Avatar className="h-10 w-10">
-                              <AvatarImage src={review.student_avatar} alt={review.student_name} />
+                              <AvatarImage
+                                src={review.student_avatar ?? undefined}
+                                alt={review.student_name}
+                              />
                               <AvatarFallback>{review.student_name.charAt(0)}</AvatarFallback>
                             </Avatar>
                             <div>
@@ -350,7 +405,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                 <CardHeader>
                   <CardTitle className="text-lg">Weekly Schedule</CardTitle>
                   <CardDescription>
-                    {coach.name}'s regular availability each week
+                    {coachName}'s regular availability each week
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -382,9 +437,9 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {coach.coach_profiles.subscription_active ? (
+                {coach.coach_profiles?.subscription_active ? (
                   <Button className="w-full" asChild>
-                    <Link href={`/coaches/${coach.id}/schedule`}>
+                    <Link href={`/coaches/${coach.prof_id}/schedule`}>
                       <Calendar className="h-4 w-4 mr-2" />
                       View Schedule & Request Session
                     </Link>
@@ -418,7 +473,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                     <MessageCircle className="h-4 w-4 mr-2 text-muted-foreground" />
                     <span>Rate</span>
                   </div>
-                  <span className="font-medium">${coach.coach_profiles.hourly_rate}/hour</span>
+                  <span className="font-medium">${coach.coach_profiles?.hourly_rate || 0}/hour</span>
                 </div>
               </div>
               
@@ -431,7 +486,7 @@ export default function CoachProfile({ params }: { params: { id: string } }) {
                   </li>
                   <li className="flex items-start">
                     <CheckCircle className="h-4 w-4 mr-2 text-green-500 mt-0.5" />
-                    <span className="text-sm">Expert guidance in {coach.coach_profiles.expertise_areas.join(', ')}</span>
+                    <span className="text-sm">Expert guidance in {coach.coach_profiles?.expertise_areas?.join(', ') || 'various areas'}</span>
                   </li>
                   <li className="flex items-start">
                     <CheckCircle className="h-4 w-4 mr-2 text-green-500 mt-0.5" />

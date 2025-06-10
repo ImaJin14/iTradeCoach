@@ -90,65 +90,79 @@ export default function StudentsPage() {
 
   async function fetchStudents(coachId: string) {
     try {
-      // Get students who have had sessions with this coach
+      // First, get sessions for this coach
       const { data: sessionData, error: sessionError } = await supabase
         .from('sessions')
         .select(`
           student_id,
           created_at,
-          status,
-          student:student_id (
-            id,
-            name,
-            email,
-            avatar_url,
-            created_at
-          )
+          status
         `)
         .eq('coach_id', coachId)
         .order('created_at', { ascending: false });
-
+  
       if (sessionError) throw sessionError;
-
-      // Get student profiles for additional data
-      const studentIds = [...new Set(sessionData?.map(s => s.student_id))];
+  
+      // Get unique student IDs
+      const studentIds = Array.from(new Set(sessionData?.map(s => s.student_id) || []));
       
       if (studentIds.length === 0) {
         setStudents([]);
         return;
       }
-
+  
+      // Get student profiles (this links to user_profiles)
       const { data: studentProfiles, error: profileError } = await supabase
         .from('student_profiles')
         .select(`
-          Student_id,
+          student_id,
           current_level,
-          tokens_earned
+          tokens_earned,
+          user_profiles!student_profiles_student_id_fkey (
+            prof_id,
+            avatar_url,
+            bio,
+            created_at
+          )
         `)
-        .in('Student_id', studentIds);
-
+        .in('student_id', studentIds);
+  
       if (profileError) throw profileError;
-
+  
+      // Get user profiles (for name and email from profiles table)
+      const { data: userProfiles, error: userError } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          name,
+          email
+        `)
+        .in('id', studentIds);
+  
+      if (userError) throw userError;
+  
       // Combine data and calculate stats
       const studentsMap = new Map();
       
       sessionData?.forEach(session => {
         const studentId = session.student_id;
         if (!studentsMap.has(studentId)) {
-          const profile = studentProfiles?.find(p => p.Student_id === studentId);
+          const profile = studentProfiles?.find(p => p.student_id === studentId);
+          const userProfile = userProfiles?.find(u => u.id === studentId);
+          
           studentsMap.set(studentId, {
             id: studentId,
-            name: session.student.name,
-            email: session.student.email,
-            avatar_url: session.student.avatar_url,
-            created_at: session.student.created_at,
+            name: userProfile?.name || 'Unknown',
+            email: userProfile?.email || 'Unknown',
+            avatar_url: profile?.user_profiles?.avatar_url || null,
+            created_at: profile?.user_profiles?.created_at || new Date().toISOString(),
             current_level: profile?.current_level || 'beginner',
             tokens_earned: profile?.tokens_earned || 0,
             sessions_completed: 0,
             last_session: null
           });
         }
-
+  
         const student = studentsMap.get(studentId);
         if (session.status === 'completed') {
           student.sessions_completed += 1;
@@ -157,7 +171,7 @@ export default function StudentsPage() {
           }
         }
       });
-
+  
       setStudents(Array.from(studentsMap.values()));
     } catch (error: any) {
       console.error('Error fetching students:', error);

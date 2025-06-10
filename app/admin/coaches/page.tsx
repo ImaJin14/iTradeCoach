@@ -62,14 +62,21 @@ interface Coach {
   email: string;
   avatar_url: string | null;
   created_at: string;
-  subscription_status: string;
+  subscription_status: string | null;
   verification_status: string;
-  rating: number;
-  total_students: number;
-  earnings: number;
-  hourly_rate: number;
-  expertise_areas: string[];
-  bio: string;
+  rating: number | null;
+  total_students: number | null;
+  earnings: number | null;
+  hourly_rate: number | null;
+  expertise_areas: string[] | null;
+  bio: string | null;
+  linkedin?: string | null;
+  twitter?: string | null;
+  website?: string | null;
+  total_sessions?: number | null;
+  total_live_sessions?: number | null;
+  enrolled_students?: number | null;
+  subscription_active?: boolean | null;
 }
 
 export default function AdminCoachesPage() {
@@ -122,40 +129,73 @@ export default function AdminCoachesPage() {
 
   async function fetchCoaches() {
     try {
-      const { data: coachData, error: coachError } = await supabase
-        .from('coach_profiles')
-        .select(`
-          *,
-          profiles:coach_id (
-            id,
-            name,
-            email,
-            avatar_url,
-            created_at,
-            subscription_status
-          )
-        `)
-        .order('created_at', { ascending: false });
+      // Use the coach_statistics view which already has aggregated data
+      const { data: coachStatsData, error: coachStatsError } = await supabase
+        .from('coach_statistics')
+        .select('*')
+        .order('coach_id');
+  
+      if (coachStatsError) throw coachStatsError;
 
-      if (coachError) throw coachError;
-
-      // Transform coach data
-      const transformedCoaches = coachData?.map(coach => ({
-        id: coach.profiles.coach_id,
-        name: coach.profiles.name,
-        email: coach.profiles.email,
-        avatar_url: coach.profiles.avatar_url,
-        created_at: coach.profiles.created_at,
-        subscription_status: coach.profiles.subscription_status,
-        verification_status: coach.verification_status,
-        rating: coach.rating,
-        total_students: coach.total_students,
-        earnings: coach.earnings,
-        hourly_rate: coach.hourly_rate,
-        expertise_areas: coach.expertise_areas,
-        bio: coach.bio
-      })) || [];
-
+      // Filter out null coach_ids and create array of strings
+      const coachIds = coachStatsData?.map(coach => coach.coach_id).filter((id): id is string => id !== null) || [];
+  
+      // Fetch additional profile and user profile data
+      const [profilesResult, userProfilesResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, name, email, subscription_status, created_at')
+          .in('id', coachIds),
+        supabase
+          .from('user_profiles')
+          .select('prof_id, avatar_url, bio, linkedin, twitter, website, created_at')
+          .in('prof_id', coachIds)
+      ]);
+  
+      if (profilesResult.error) throw profilesResult.error;
+      if (userProfilesResult.error) throw userProfilesResult.error;
+  
+      // Create lookup maps
+      const profilesMap = profilesResult.data?.reduce((acc, profile) => {
+        acc[profile.id] = profile;
+        return acc;
+      }, {} as Record<string, any>) || {};
+  
+      const userProfilesMap = userProfilesResult.data?.reduce((acc, userProfile) => {
+        acc[userProfile.prof_id] = userProfile;
+        return acc;
+      }, {} as Record<string, any>) || {};
+  
+      // Transform and combine the data
+      const transformedCoaches = coachStatsData?.map(coachStats => {
+        const profile = profilesMap[coachStats.coach_id!];
+        const userProfile = userProfilesMap[coachStats.coach_id!];
+        
+        return {
+          id: coachStats.coach_id!,
+          name: coachStats.name || profile?.name || 'Unknown',
+          email: profile?.email || '',
+          avatar_url: userProfile?.avatar_url || null,
+          created_at: profile?.created_at || userProfile?.created_at,
+          subscription_status: profile?.subscription_status || null,
+          verification_status: coachStats.verification_status || 'pending',
+          rating: coachStats.rating,
+          total_students: coachStats.total_students,
+          earnings: coachStats.earnings,
+          hourly_rate: coachStats.hourly_rate,
+          expertise_areas: [], // This field is not in the view, you might need to fetch it separately if needed
+          bio: userProfile?.bio || null,
+          linkedin: userProfile?.linkedin,
+          twitter: userProfile?.twitter,
+          website: userProfile?.website,
+          // Additional stats from the view
+          total_sessions: coachStats.total_sessions,
+          total_live_sessions: coachStats.total_live_sessions,
+          enrolled_students: coachStats.enrolled_students,
+          subscription_active: coachStats.subscription_active
+        };
+      }) || [];
+  
       setCoaches(transformedCoaches);
     } catch (error: any) {
       console.error('Error fetching coaches:', error);
@@ -271,7 +311,7 @@ export default function AdminCoachesPage() {
     const matchesSearch = 
       coach.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       coach.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      coach.expertise_areas?.some(area => area.toLowerCase().includes(searchTerm.toLowerCase()));
+      (coach.expertise_areas && coach.expertise_areas.some(area => area.toLowerCase().includes(searchTerm.toLowerCase())));
     
     const matchesVerification = verificationFilter === "all" || coach.verification_status === verificationFilter;
     const matchesSubscription = subscriptionFilter === "all" || coach.subscription_status === subscriptionFilter;
@@ -447,28 +487,36 @@ export default function AdminCoachesPage() {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                      <span className="font-medium">{coach.rating}</span>
+                      <span className="font-medium">{coach.rating || 'N/A'}</span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium">{coach.total_students}</span>
+                    <span className="font-medium">{coach.total_students || 0}</span>
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium">${coach.earnings}</span>
+                    <span className="font-medium">${coach.earnings || 0}</span>
                   </TableCell>
                   <TableCell>
-                    <span className="font-medium">${coach.hourly_rate}/hr</span>
+                    <span className="font-medium">${coach.hourly_rate || 0}/hr</span>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1 max-w-[200px]">
-                      {coach.expertise_areas?.slice(0, 2).map((area, index) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {area}
-                        </Badge>
-                      ))}
-                      {coach.expertise_areas?.length > 2 && (
+                      {coach.expertise_areas && coach.expertise_areas.length > 0 ? (
+                        <>
+                          {coach.expertise_areas.slice(0, 2).map((area, index) => (
+                            <Badge key={index} variant="outline" className="text-xs">
+                              {area}
+                            </Badge>
+                          ))}
+                          {coach.expertise_areas.length > 2 && (
+                            <Badge variant="outline" className="text-xs">
+                              +{coach.expertise_areas.length - 2}
+                            </Badge>
+                          )}
+                        </>
+                      ) : (
                         <Badge variant="outline" className="text-xs">
-                          +{coach.expertise_areas.length - 2}
+                          No expertise listed
                         </Badge>
                       )}
                     </div>

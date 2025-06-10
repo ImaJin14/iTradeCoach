@@ -193,60 +193,73 @@ export default function CreateBlogPostPage() {
     setNewTag("");
   }
 
-  async function onSubmit(data: BlogPostValues) {
-    if (!currentUser) return;
+// Add this helper function near the top of your component, after the imports
+function generateSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
 
-    setSaving(true);
-    try {
-      // Create the blog post
-      const { data: post, error: postError } = await supabase
-        .from('blog_posts')
-        .insert({
-          title: data.title,
-          excerpt: data.excerpt,
-          content: data.content,
-          category_id: data.category_id,
-          featured_image_url: data.featured_image_url || null,
-          featured: data.featured,
-          status: data.status,
-          author_id: currentUser.id,
-        })
-        .select()
-        .single();
+// Replace your onSubmit function with this updated version:
+async function onSubmit(data: BlogPostValues) {
+  if (!currentUser) return;
 
-      if (postError) throw postError;
+  setSaving(true);
+  try {
+    // Generate slug from title
+    const slug = generateSlug(data.title);
+    
+    // Create the blog post
+    const { data: post, error: postError } = await supabase
+      .from('blog_posts')
+      .insert({
+        title: data.title,
+        slug: slug, // Add the missing slug field
+        excerpt: data.excerpt,
+        content: data.content,
+        category_id: data.category_id,
+        featured_image_url: data.featured_image_url || null,
+        featured: data.featured,
+        status: data.status,
+        author_id: currentUser.id,
+      })
+      .select()
+      .single();
 
-      // Add tags if any selected
-      if (selectedTags.length > 0) {
-        const tagInserts = selectedTags.map(tagId => ({
-          post_id: post.id,
-          tag_id: tagId
-        }));
+    if (postError) throw postError;
 
-        const { error: tagsError } = await supabase
-          .from('blog_post_tags')
-          .insert(tagInserts);
+    // Add tags if any selected
+    if (selectedTags.length > 0) {
+      const tagInserts = selectedTags.map(tagId => ({
+        post_id: post.id,
+        tag_id: tagId
+      }));
 
-        if (tagsError) throw tagsError;
-      }
+      const { error: tagsError } = await supabase
+        .from('blog_post_tags')
+        .insert(tagInserts);
 
-      toast({
-        title: "Post Created",
-        description: `Your blog post has been ${data.status === 'published' ? 'published' : 'saved as draft'} successfully.`,
-      });
-
-      router.push('/blog');
-    } catch (error: any) {
-      console.error('Error creating post:', error);
-      toast({
-        title: "Error",
-        description: "Failed to create blog post. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
+      if (tagsError) throw tagsError;
     }
+
+    toast({
+      title: "Post Created",
+      description: `Your blog post has been ${data.status === 'published' ? 'published' : 'saved as draft'} successfully.`,
+    });
+
+    router.push('/blog');
+  } catch (error: any) {
+    console.error('Error creating post:', error);
+    toast({
+      title: "Error",
+      description: "Failed to create blog post. Please try again.",
+      variant: "destructive",
+    });
+  } finally {
+    setSaving(false);
   }
+}
 
   const getSelectedTagNames = () => {
     return selectedTags.map(tagId => {

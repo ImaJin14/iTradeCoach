@@ -58,7 +58,6 @@ export default function Header() {
           .single();
 
         if (profile) {
-          setAvatarUrl(profile.avatar_url);
           setUserProfile(profile);
           user.user_metadata.name = profile.name;
           user.user_metadata.role = profile.role;
@@ -114,10 +113,16 @@ export default function Header() {
     return pathname === path;
   };
 
+  // Custom navigation link style with more padding
+  const customNavLinkStyle = cn(
+    navigationMenuTriggerStyle(),
+    "px-4 mx-1" // Add horizontal padding and margin for more spacing
+  );
+
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4 flex h-16 items-center justify-between max-w-7xl">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-8"> {/* Increased gap from 6 to 8 */}
           <Link href="/" className="flex items-center space-x-2">
             <LineChart className="h-6 w-6" />
             <span className="hidden font-bold sm:inline-block text-xl">iTradeCoach</span>
@@ -126,65 +131,67 @@ export default function Header() {
           {/* Admin users only see Dashboard in navigation */}
           {user && userProfile?.role === 'admin' ? (
             <NavigationMenu className="hidden md:flex">
-              <NavigationMenuList>
+              <NavigationMenuList className="gap-2"> {/* Add gap between list items */}
                 <NavigationMenuItem>
-                  <Link href="/dashboard"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <NavigationMenuLink asChild>
+                    <Link href="/dashboard" className={customNavLinkStyle}>
                       Dashboard
+                      </Link>
                     </NavigationMenuLink>
-                  </Link>
                 </NavigationMenuItem>
+                
                 <NavigationMenuItem>
-                  <Link href="/classroom"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <NavigationMenuLink asChild>
+                    <Link href="/classroom" className={customNavLinkStyle}>
                       Classroom
+                      </Link>
                     </NavigationMenuLink>
-                  </Link>
                 </NavigationMenuItem>
               </NavigationMenuList>
             </NavigationMenu>
           ) : user && userProfile?.role === 'coach' ? (
             /* Coach navigation - Dashboard, Students, Classroom, Sessions, Requests, and Pricing */
             <NavigationMenu className="hidden md:flex">
-              <NavigationMenuList>
+              <NavigationMenuList className="gap-2"> {/* Add gap between list items */}
                 <NavigationMenuItem>
-                  <Link href="/dashboard"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <NavigationMenuLink className={customNavLinkStyle}>
+                    <Link href="/dashboard" >
                       Dashboard
+                      </Link>
                     </NavigationMenuLink>
-                  </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/students"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <NavigationMenuLink className={customNavLinkStyle}>
+                    <Link href="/students" >
                       Students
+                      </Link>
                     </NavigationMenuLink>
-                  </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/classroom"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <NavigationMenuLink className={customNavLinkStyle}>
+                    <Link href="/classroom" >
                       Classroom
+                      </Link>
                     </NavigationMenuLink>
-                  </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/sessions/schedule"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <NavigationMenuLink className={customNavLinkStyle}>
+                    <Link href="/sessions/schedule" >
                       Live Sessions
+                      </Link>
                     </NavigationMenuLink>
-                  </Link>
+                  
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/sessions/requests"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
-                      Requests
+                    <NavigationMenuLink className={customNavLinkStyle}>
+                    <Link href="/sessions/requests" >
+                    Requests
+                      </Link>
                     </NavigationMenuLink>
-                  </Link>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/pricing"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                  <Link href="/pricing" passHref>
+                    <NavigationMenuLink className={customNavLinkStyle}>
                       Pricing
                     </NavigationMenuLink>
                   </Link>
@@ -194,11 +201,11 @@ export default function Header() {
           ) : (
             /* Regular navigation for students and non-authenticated users */
             <NavigationMenu className="hidden md:flex">
-              <NavigationMenuList>
+              <NavigationMenuList className="gap-2"> {/* Add gap between list items */}
                 {user && (
                   <NavigationMenuItem>
-                    <Link href="/dashboard\"  passHref>
-                      <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <Link href="/dashboard" passHref>
+                      <NavigationMenuLink className={customNavLinkStyle}>
                         Dashboard
                       </NavigationMenuLink>
                     </Link>
@@ -206,8 +213,8 @@ export default function Header() {
                 )}
                 {user && (
                   <NavigationMenuItem>
-                    <Link href="/coaches"  passHref>
-                      <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <Link href="/coaches" passHref>
+                      <NavigationMenuLink className={customNavLinkStyle}>
                         Find Coaches
                       </NavigationMenuLink>
                     </Link>
@@ -215,15 +222,17 @@ export default function Header() {
                 )}
                 {user && (
                   <NavigationMenuItem>
-                    <Link href="/classroom"  passHref>
-                      <NavigationMenuLink className={navigationMenuTriggerStyle()}>
+                    <Link href="/classroom" passHref>
+                      <NavigationMenuLink className={customNavLinkStyle}>
                         Classroom
                       </NavigationMenuLink>
                     </Link>
                   </NavigationMenuItem>
                 )}
                 <NavigationMenuItem>
-                  <NavigationMenuTrigger>Learn</NavigationMenuTrigger>
+                  <NavigationMenuTrigger className={cn(customNavLinkStyle, "data-[state=open]:bg-accent/50")}>
+                    Learn
+                  </NavigationMenuTrigger>
                   <NavigationMenuContent>
                     <ul className="grid gap-3 p-4 w-[400px] md:w-[500px] lg:w-[600px] grid-cols-2">
                       <li className="row-span-3">
@@ -243,7 +252,7 @@ export default function Header() {
                         </NavigationMenuLink>
                       </li>
                       <li>
-                        <Link href="/learn"  passHref>
+                        <Link href="/learn" passHref>
                           <NavigationMenuLink className={cn("block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground")}>
                             <div className="text-sm font-medium leading-none">Beginner</div>
                             <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
@@ -253,7 +262,7 @@ export default function Header() {
                         </Link>
                       </li>
                       <li>
-                        <Link href="/learn"  passHref>
+                        <Link href="/learn" passHref>
                           <NavigationMenuLink className={cn("block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground")}>
                             <div className="text-sm font-medium leading-none">Intermediate</div>
                             <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
@@ -263,7 +272,7 @@ export default function Header() {
                         </Link>
                       </li>
                       <li>
-                        <Link href="/learn"  passHref>
+                        <Link href="/learn" passHref>
                           <NavigationMenuLink className={cn("block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground")}>
                             <div className="text-sm font-medium leading-none">Advanced</div>
                             <p className="line-clamp-2 text-sm leading-snug text-muted-foreground">
@@ -276,11 +285,11 @@ export default function Header() {
                   </NavigationMenuContent>
                 </NavigationMenuItem>
                 <NavigationMenuItem>
-                  <Link href="/pricing"  passHref>
-                    <NavigationMenuLink className={navigationMenuTriggerStyle()}>
-                      Pricing
-                    </NavigationMenuLink>
-                  </Link>
+                      <NavigationMenuLink asChild>
+                        <Link href="/pricing" className={customNavLinkStyle}>
+                          Pricing
+                        </Link>
+                      </NavigationMenuLink>
                 </NavigationMenuItem>
               </NavigationMenuList>
             </NavigationMenu>

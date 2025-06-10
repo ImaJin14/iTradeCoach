@@ -129,17 +129,59 @@ export default function SessionRequestsPage() {
         .from('session_requests')
         .select(`
           *,
-          student:student_id (
-            name,
-            avatar_url,
-            email
+          student_profiles!session_requests_student_id_fkey (
+            student_id,
+            user_profiles!student_profiles_student_id_fkey (
+              avatar_url,
+              prof_id
+            )
           )
         `)
         .eq('coach_id', coachId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSessionRequests(data || []);
+
+      if (error) {
+        console.error('Supabase error details:', error);
+        throw error;
+      }
+  
+      // Now get the profile info from the profiles table
+      const studentIds = data?.map(request => 
+        request.student_profiles?.user_profiles?.prof_id
+      ).filter(Boolean) || [];
+  
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, name, email')
+        .in('id', studentIds);
+  
+      if (profilesError) {
+        console.error('Profiles error:', profilesError);
+      }
+  
+      // Create a lookup map
+      const profilesMap = new Map(
+        profilesData?.map(profile => [profile.id, profile]) || []
+      );
+  
+      // Transform the data
+      const transformedData = data?.map(request => {
+        const profileId = request.student_profiles?.user_profiles?.prof_id;
+        const profile = profilesMap.get(profileId);
+        
+        return {
+          ...request,
+          student: {
+            name: profile?.name || 'Unknown Student',
+            email: profile?.email || '',
+            avatar_url: request.student_profiles?.user_profiles?.avatar_url || null
+          }
+        };
+      }) || [];
+
+      setSessionRequests(transformedData);
     } catch (error: any) {
       console.error('Error fetching session requests:', error);
       toast({

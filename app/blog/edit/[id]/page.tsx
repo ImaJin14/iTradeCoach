@@ -61,7 +61,7 @@ interface BlogPost {
   id: string;
   title: string;
   slug: string;
-  excerpt: string;
+  excerpt: string; // Changed from string | null to string
   content: string;
   featured_image_url: string | null;
   author_id: string;
@@ -92,7 +92,7 @@ interface EditBlogPostPageProps {
 }
 
 export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
-  const [postId, setPostId] = useState<string | null>(null);
+  const [postId, setPostId] = useState<string>(''); // Changed from string | null to string
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('');
   const [post, setPost] = useState<BlogPost | null>(null);
@@ -120,13 +120,10 @@ export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
   });
 
   // Resolve the params promise and set postId
-  // Although the type hint is Promise, params is likely a regular object here
-  // due to how Next.js handles client components in the App Router.
-  // We keep the type annotation matching the error but access it directly.
   useEffect(() => {
     async function resolveParams() {
-      const resolvedParams = await params; // Await the promise
-      setPostId((await params).id);
+      const resolvedParams = await params;
+      setPostId(resolvedParams.id || ''); // Fixed: handle potential null value
     }
     resolveParams();
   }, [params]);
@@ -157,7 +154,7 @@ export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
         }
 
         await Promise.all([
-          postId ? fetchPost(postId, user.id, profile?.role) : Promise.resolve(), // Use postId here
+          postId ? fetchPost(postId, user.id, profile?.role || '') : Promise.resolve(), // Fixed: provide fallback for undefined role
           fetchCategories(),
           fetchTags()
         ]);
@@ -180,16 +177,16 @@ export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
       const { data: postData, error: postError } = await supabase
         .from('blog_posts')
         .select('*')
-        .eq('id', id) // Use the id argument
+        .eq('id', id)
         .single();
-
+  
       if (postError) {
         if (postError.code === 'PGRST116') {
           notFound();
         }
         throw postError;
       }
-
+  
       // Check if user can edit this post
       if (postData.author_id !== userId && role !== 'admin') {
         toast({
@@ -200,29 +197,30 @@ export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
         router.push('/blog');
         return;
       }
-
-      // Fetch tags for the post
+  
+      // Fetch tags for the post with proper nested selection
       const { data: tagData } = await supabase
         .from('blog_post_tags')
         .select(`
-          tag:tag_id (
+          blog_tags!blog_post_tags_tag_id_fkey (
             id,
             name,
             slug
           )
         `)
         .eq('post_id', postData.id);
-
-      const postWithTags = {
+  
+      const postWithTags: BlogPost = { // Fixed: explicitly type the object and handle null excerpt
         ...postData,
-        tags: tagData?.map(t => t.tag) || []
+        excerpt: postData.excerpt || '', // Ensure excerpt is never null
+        tags: tagData?.map(t => t.blog_tags).filter(Boolean) || []
       };
-
+  
       setPost(postWithTags);
       setSelectedTags(postWithTags.tags.map((tag: { id: any; }) => tag.id));
-
+  
       // Set form values
-      form.reset({ // Reset form after fetching post data
+      form.reset({
         title: postData.title,
         excerpt: postData.excerpt || "",
         content: postData.content,
@@ -236,35 +234,35 @@ export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
       notFound();
     }
   }
-
+  
   async function fetchCategories() {
     try {
       const { data, error } = await supabase
         .from('blog_categories')
         .select('*')
         .order('name');
-
+  
       if (error) throw error;
       setCategories(data || []);
     } catch (error: any) {
       console.error('Error fetching categories:', error);
     }
   }
-
+  
   async function fetchTags() {
     try {
       const { data, error } = await supabase
         .from('blog_tags')
         .select('*')
         .order('name');
-
+  
       if (error) throw error;
       setAvailableTags(data || []);
     } catch (error: any) {
       console.error('Error fetching tags:', error);
     }
   }
-
+  
   async function createTag(name: string) {
     try {
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -274,7 +272,7 @@ export default function EditBlogPostPage({ params }: EditBlogPostPageProps) {
         .insert({ name, slug })
         .select()
         .single();
-
+  
       if (error) throw error;
       
       setAvailableTags(prev => [...prev, data]);

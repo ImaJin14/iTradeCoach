@@ -212,64 +212,71 @@ export default function ScheduleSessionPage() {
 
   async function fetchStudents(coachId: string) {
     try {
-      // Get students who have had sessions with this coach
+      // Get sessions with related profile data
       const { data: sessionData, error: sessionError } = await supabase
         .from('sessions')
         .select(`
           student_id,
           created_at,
           status,
-          student:student_id (
-            id,
-            name,
-            email,
-            avatar_url,
-            created_at
+          student_profiles!sessions_student_id_fkey(
+            student_id,
+            current_level,
+            tokens_earned
           )
         `)
         .eq('coach_id', coachId)
         .order('created_at', { ascending: false });
-
+  
       if (sessionError) throw sessionError;
-
-      // Get student profiles for additional data
-      const studentIds = [...new Set(sessionData?.map(s => s.student_id))];
-      
-      if (studentIds.length === 0) {
+  
+      if (!sessionData || sessionData.length === 0) {
         setStudents([]);
         return;
       }
-
-      const { data: studentProfiles, error: profileError } = await supabase
-        .from('student_profiles')
-        .select(`
-          student_id,
-          current_level,
-          tokens_earned
-        `)
-        .in('user_id', studentIds);
-
+  
+      // Get unique student IDs
+      const studentIds = Array.from(new Set(sessionData.map(s => s.student_id)));
+      
+      // Get user profile data (avatars, bio, etc.)
+      const { data: userProfiles, error: userProfileError } = await supabase
+        .from('user_profiles')
+        .select('prof_id, avatar_url, bio')
+        .in('prof_id', studentIds);
+  
+      if (userProfileError) throw userProfileError;
+  
+      // Get basic profile data (names, emails) 
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, name, email')
+        .in('id', studentIds);
+  
       if (profileError) throw profileError;
-
+  
       // Combine data and calculate stats
       const studentsMap = new Map();
       
-      sessionData?.forEach(session => {
+      sessionData.forEach(session => {
         const studentId = session.student_id;
+        
         if (!studentsMap.has(studentId)) {
-          const profile = studentProfiles?.find(p => p.user_id === studentId);
+          const userProfile = userProfiles?.find(p => p.prof_id === studentId);
+          const profile = profiles?.find(p => p.id === studentId);
+          const studentProfile = session.student_profiles;
+          
           studentsMap.set(studentId, {
             id: studentId,
-            name: session.student.name,
-            email: session.student.email,
-            avatar_url: session.student.avatar_url,
-            current_level: profile?.current_level || 'beginner',
-            tokens_earned: profile?.tokens_earned || 0,
+            name: profile?.name || 'Unknown',
+            email: profile?.email || 'Unknown',
+            avatar_url: userProfile?.avatar_url || null,
+            current_level: studentProfile?.current_level || 'beginner',
+            tokens_earned: studentProfile?.tokens_earned || 0,
             sessions_completed: 0,
             last_session: null
           });
         }
-
+  
         const student = studentsMap.get(studentId);
         if (session.status === 'completed') {
           student.sessions_completed += 1;
@@ -278,7 +285,7 @@ export default function ScheduleSessionPage() {
           }
         }
       });
-
+  
       setStudents(Array.from(studentsMap.values()));
     } catch (error: any) {
       console.error('Error fetching students:', error);

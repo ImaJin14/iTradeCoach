@@ -53,14 +53,14 @@ interface AvailabilitySlot {
   status: ScheduleStatus;
   notes?: string;
   isRecurring: boolean;
-  date?: string;
+  date?: string | null; // Changed from string | undefined to string | null
 }
 
 interface Session {
   id: string;
   scheduled_time: string;
   duration: number;
-  status: string;
+  status: string | null; // Changed from string to string | null
   student_name: string;
   student_avatar: string | null;
 }
@@ -69,7 +69,7 @@ interface SupabaseSessionData {
   id: string;
   scheduled_time: string;
   duration: number;
-  status: string;
+  status: string | null; // Added null as possible type
   student: {
     name: string;
     avatar_url: string | null;
@@ -196,7 +196,7 @@ export default function AvailabilityPage() {
         status: (slot.status || 'available') as ScheduleStatus,
         notes: slot.notes || '',
         isRecurring: slot.is_recurring,
-        date: slot.specific_date
+        date: slot.specific_date // This is now correctly typed as string | null
       })) || [];
 
       setAvailabilitySlots(slots);
@@ -219,10 +219,7 @@ export default function AvailabilityPage() {
           scheduled_time,
           duration,
           status,
-          student:student_id (
-            name,
-            avatar_url
-          )
+          student_id
         `)
         .eq('coach_id', coachId)
         .gte('scheduled_time', new Date().toISOString())
@@ -230,20 +227,31 @@ export default function AvailabilityPage() {
 
       if (error) throw error;
 
-      const formattedSessions = (data as SupabaseSessionData[])?.map((session: SupabaseSessionData) => ({
-        id: session.id,
-        scheduled_time: session.scheduled_time,
-        duration: session.duration,
-        status: session.status,
-        student_name: session.student?.name || 'Unknown Student',
-        student_avatar: session.student?.avatar_url || null
-      })) || [];
+      const formattedSessions = [];
+      
+      for (const session of data || []) {
+        // Use the user_complete_profiles view which joins profiles and user_profiles
+        const { data: studentProfile } = await supabase
+          .from('user_complete_profiles')
+          .select('name, avatar_url')
+          .eq('id', session.student_id)
+          .single();
+
+        formattedSessions.push({
+          id: session.id,
+          scheduled_time: session.scheduled_time,
+          duration: session.duration,
+          status: session.status,
+          student_name: studentProfile?.name || 'Unknown Student',
+          student_avatar: studentProfile?.avatar_url || null
+        });
+      }
 
       setSessions(formattedSessions);
     } catch (error: any) {
       console.error('Error fetching sessions:', error);
     }
-  }
+}
 
   async function saveAvailabilitySlot(slot: AvailabilitySlot) {
     if (!currentUser) return;
@@ -713,7 +721,7 @@ export default function AvailabilityPage() {
                       variant={session.status === 'scheduled' ? 'secondary' : 'default'}
                       className="text-xs mt-1"
                     >
-                      {session.status}
+                      {session.status || 'pending'}
                     </Badge>
                   </div>
                 ))}

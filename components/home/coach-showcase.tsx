@@ -22,10 +22,13 @@ export default function CoachShowcase() {
           .from('coach_profiles')
           .select(`
             *,
-            profiles:coach_id (
+            profiles!coach_profiles_coach_id_fkey (
               name,
-              email,
-              avatar_url
+              email
+            ),
+            user_profiles!coach_profiles_coach_id_fkey (
+              avatar_url,
+              bio
             )
           `)
           .eq('verification_status', 'verified')

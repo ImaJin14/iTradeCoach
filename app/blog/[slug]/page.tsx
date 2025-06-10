@@ -31,32 +31,41 @@ import { useToast } from "@/hooks/use-toast";
 interface BlogPost {
   id: string;
   title: string;
-  slug: string;
-  excerpt: string;
   content: string;
-  featured_image_url: string | null;
+  slug: string;
+  status: string;
   author_id: string;
   category_id: string | null;
-  status: string;
-  featured: boolean;
-  read_time: number;
-  views_count: number;
+  views_count: number | null;
   published_at: string | null;
   created_at: string;
   updated_at: string;
-  author: {
+  excerpt: string | null;
+  featured: boolean;
+  featured_image_url: string | null;
+  read_time: number | null;
+  author?: {
     name: string;
     avatar_url: string | null;
-  };
-  category: {
+  } | null;
+  category?: {
     name: string;
     slug: string;
   } | null;
-  tags: Array<{
+  tags?: Array<{
     id: string;
     name: string;
     slug: string;
   }>;
+}
+
+interface User {
+  id: string;
+  email?: string;
+}
+
+interface UserProfile {
+  role: string;
 }
 
 interface BlogPostPageProps {
@@ -65,37 +74,268 @@ interface BlogPostPageProps {
   }>;
 }
 
-export default async function BlogPostPage({ params }: BlogPostPageProps) {
+export default function BlogPostPage({ params }: BlogPostPageProps) {
   const [post, setPost] = useState<BlogPost | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('');
+  const [slug, setSlug] = useState<string>('');
   const router = useRouter();
   const { toast } = useToast();
 
   useEffect(() => {
-    async function loadPost() {
+    // Separate function to get user and role efficiently
+    async function getCurrentUserWithRole(): Promise<{ user: any | null, role: string }> {
       try {
-        // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
         
-        if (user) {
-          setCurrentUser(user);
-          
-          // Get user profile for role
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-          
-          if (profile) {
-            setUserRole(profile.role);
-          }
+        if (userError || !user) {
+          return { user: null, role: '' };
         }
 
-        await fetchPost();
+        // Get role directly from profiles table
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (profileError) {
+          console.warn('Error fetching user role:', profileError);
+          return { user, role: '' };
+        }
+
+        return { user, role: profile?.role || '' };
+      } catch (error) {
+        console.warn('Error getting current user:', error);
+        return { user: null, role: '' };
+      }
+    }
+
+    // Simplified post fetching
+    async function fetchPostBySlug(slug: string) {
+      const { data, error } = await supabase
+        .from('blog_posts')
+        .select('*')
+        .eq('slug', slug)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          notFound();
+        }
+        throw new Error(`Failed to fetch post: ${error.message}`);
+      }
+
+      return data;
+    }
+
+    // Check if user can view the post
+    function canViewPost(post: any, user: any, userRole: string): boolean {
+      if (post.status === 'published') {
+        return true;
+      }
+      
+      if (!user) {
+        return false;
+      }
+      
+      return user.id === post.author_id || userRole === 'admin';
+    }
+
+    // Fixed author fetching with proper error handling
+    async function fetchAuthor(authorId: string) {
+      try {
+        // First try to get from user_profiles with profiles join
+        const { data: profileData, error: profileError } = await supabase
+          .from('user_profiles')
+          .select(`
+            prof_id,
+            avatar_url
+          `)
+          .eq('prof_id', authorId)
+          .single();
+
+        // Get name from profiles table separately
+        const { data: nameData, error: nameError } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('id', authorId)
+          .single();
+
+        if (profileError && nameError) {
+          return { name: 'Unknown Author', avatar_url: null };
+        }
+
+        return {
+          name: nameData?.name || 'Unknown Author',
+          avatar_url: profileData?.avatar_url || null
+        };
+      } catch (error) {
+        console.warn('Error fetching author:', error);
+        return { name: 'Unknown Author', avatar_url: null };
+      }
+    }
+
+    // Simplified category fetching
+    async function fetchCategory(categoryId: string) {
+      try {
+        const { data, error } = await supabase
+          .from('blog_categories')
+          .select('name, slug')
+          .eq('id', categoryId)
+          .single();
+
+        if (error) {
+          console.warn('Error fetching category:', error);
+          return null;
+        }
+
+        return data;
+      } catch (error) {
+        console.warn('Error fetching category:', error);
+        return null;
+      }
+    }
+
+    // Optimized tags fetching
+    async function fetchPostTags(postId: string) {
+      try {
+        const { data, error } = await supabase
+          .from('blog_post_tags')
+          .select(`
+            blog_tags (
+              id,
+              name,
+              slug
+            )
+          `)
+          .eq('post_id', postId);
+
+        if (error) {
+          console.warn('Error fetching tags:', error);
+          return [];
+        }
+
+        return data?.map(item => item.blog_tags).filter(Boolean) || [];
+      } catch (error) {
+        console.warn('Error fetching tags:', error);
+        return [];
+      }
+    }
+
+    // Non-blocking view count increment
+    async function incrementViewCount(postId: string, currentCount: number) {
+      try {
+        await supabase
+          .from('blog_posts')
+          .update({ views_count: currentCount + 1 })
+          .eq('id', postId);
+      } catch (error) {
+        console.warn('Error incrementing view count:', error);
+      }
+    }
+
+    // Optimized related posts fetching with fixed author handling
+    async function fetchRelatedPosts(categoryId: string, currentPostId: string): Promise<BlogPost[]> {
+      try {
+        const { data: relatedData, error } = await supabase
+          .from('blog_posts')
+          .select(`
+            *,
+            blog_categories!blog_posts_category_id_fkey (
+              name,
+              slug
+            )
+          `)
+          .eq('category_id', categoryId)
+          .eq('status', 'published')
+          .neq('id', currentPostId)
+          .limit(3);
+
+        if (error || !relatedData) {
+          return [];
+        }
+
+        // Transform the data to match your BlogPost interface
+        const relatedPosts = await Promise.all(
+          relatedData.map(async (post) => {
+            // Fetch author and tags for each related post
+            const [author, tags] = await Promise.all([
+              fetchAuthor(post.author_id),
+              fetchPostTags(post.id)
+            ]);
+            
+            return {
+              ...post,
+              author,
+              category: post.blog_categories,
+              tags
+            } as BlogPost;
+          })
+        );
+
+        return relatedPosts;
+      } catch (error) {
+        console.warn('Error fetching related posts:', error);
+        return [];
+      }
+    }
+
+    // Main load function
+    async function loadPost() {
+      try {
+        // Get the slug from params
+        const resolvedParams = await params;
+        const postSlug = resolvedParams.slug;
+        setSlug(postSlug);
+
+        // Get current user and their role in parallel
+        const [userResult, postResult] = await Promise.all([
+          getCurrentUserWithRole(),
+          fetchPostBySlug(postSlug)
+        ]);
+
+        if (userResult.user) {
+          setCurrentUser(userResult.user);
+          setUserRole(userResult.role);
+        }
+
+        // Check permissions before proceeding
+        if (!canViewPost(postResult, userResult.user, userResult.role)) {
+          notFound();
+          return;
+        }
+
+        // Fetch additional data in parallel
+        const [authorData, categoryData, tagsData] = await Promise.all([
+          fetchAuthor(postResult.author_id),
+          postResult.category_id ? fetchCategory(postResult.category_id) : Promise.resolve(null),
+          fetchPostTags(postResult.id)
+        ]);
+
+        const fullPost: BlogPost = {
+          ...postResult,
+          author: authorData,
+          category: categoryData,
+          tags: tagsData
+        };
+
+        setPost(fullPost);
+
+        // Do these operations in parallel but don't wait for them
+        Promise.all([
+          incrementViewCount(postResult.id, postResult.views_count || 0),
+          postResult.category_id ? fetchRelatedPosts(postResult.category_id, postResult.id) : Promise.resolve([])
+        ]).then(([, relatedPosts]) => {
+          if (relatedPosts.length > 0) {
+            setRelatedPosts(relatedPosts);
+          }
+        }).catch(error => {
+          console.warn('Error fetching related content:', error);
+        });
+
       } catch (error: any) {
         console.error('Error loading post:', error);
         toast({
@@ -108,117 +348,17 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
       }
     }
 
+    // Call the load function
     loadPost();
-  }, [(await params).slug, toast]);
+  }, [params, toast]);
 
-  async function fetchPost() {
-    try {
-      // Fetch the blog post
-      const { data: postData, error: postError } = await supabase
-        .from('blog_posts')
-        .select(`
-          *,
-          author:author_id (
-            name,
-            avatar_url
-          ),
-          category:category_id (
-            name,
-            slug
-          )
-        `)
-        .eq('slug', (await params).slug)
-        .single();
+  // Helper functions
+  const canManagePost = () => {
+    return currentUser && post && (userRole === 'admin' || post.author_id === currentUser.id);
+  };
 
-      if (postError) {
-        if (postError.code === 'PGRST116') {
-          notFound();
-        }
-        throw postError;
-      }
-
-      // Check if user can view this post
-      if (postData.status !== 'published' && 
-          (!currentUser || (currentUser.id !== postData.author_id && userRole !== 'admin'))) {
-        notFound();
-      }
-
-      // Fetch tags for the post
-      const { data: tagData } = await supabase
-        .from('blog_post_tags')
-        .select(`
-          tag:tag_id (
-            id,
-            name,
-            slug
-          )
-        `)
-        .eq('post_id', postData.id);
-
-      const postWithTags = {
-        ...postData,
-        tags: tagData?.map(t => t.tag) || []
-      };
-
-      setPost(postWithTags);
-
-      // Increment view count
-      await supabase
-        .from('blog_posts')
-        .update({ views_count: postData.views_count + 1 })
-        .eq('id', postData.id);
-
-      // Fetch related posts
-      if (postData.category_id) {
-        const { data: relatedData } = await supabase
-          .from('blog_posts')
-          .select(`
-            *,
-            author:author_id (
-              name,
-              avatar_url
-            ),
-            category:category_id (
-              name,
-              slug
-            )
-          `)
-          .eq('category_id', postData.category_id)
-          .eq('status', 'published')
-          .neq('id', postData.id)
-          .limit(3);
-
-        if (relatedData) {
-          const relatedWithTags = await Promise.all(
-            relatedData.map(async (relatedPost) => {
-              const { data: relatedTagData } = await supabase
-                .from('blog_post_tags')
-                .select(`
-                  tag:tag_id (
-                    id,
-                    name,
-                    slug
-                  )
-                `)
-                .eq('post_id', relatedPost.id);
-
-              return {
-                ...relatedPost,
-                tags: relatedTagData?.map(t => t.tag) || []
-              };
-            })
-          );
-
-          setRelatedPosts(relatedWithTags);
-        }
-      }
-    } catch (error: any) {
-      console.error('Error fetching post:', error);
-      notFound();
-    }
-  }
-
-  async function handleDeletePost() {
+  // Simplified delete function with better error handling
+  const handleDeletePost = async () => {
     if (!post) return;
 
     try {
@@ -227,7 +367,9 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
         .delete()
         .eq('id', post.id);
 
-      if (error) throw error;
+      if (error) {
+        throw new Error(`Failed to delete post: ${error.message}`);
+      }
 
       toast({
         title: "Post Deleted",
@@ -239,22 +381,18 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
       console.error('Error deleting post:', error);
       toast({
         title: "Error",
-        description: "Failed to delete post. Please try again.",
+        description: error.message || "Failed to delete post. Please try again.",
         variant: "destructive",
       });
     }
-  }
-
-  const canManagePost = () => {
-    return currentUser && post && (userRole === 'admin' || post.author_id === currentUser.id);
   };
 
   const handleShare = async () => {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: post?.title,
-          text: post?.excerpt,
+          title: post?.title || undefined,
+          text: post?.excerpt || undefined,
           url: window.location.href,
         });
       } catch (error) {
@@ -364,11 +502,11 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             <div className="flex items-center gap-2">
               <Avatar className="h-8 w-8">
                 <AvatarImage 
-                  src={post.author.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`} 
+                  src={post.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`} 
                 />
-                <AvatarFallback>{post.author.name.charAt(0)}</AvatarFallback>
+                <AvatarFallback>{post.author?.name?.charAt(0) || 'U'}</AvatarFallback>
               </Avatar>
-              <span className="font-medium">{post.author.name}</span>
+              <span className="font-medium">{post.author?.name || 'Unknown Author'}</span>
             </div>
             <div className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
@@ -387,11 +525,11 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             </div>
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              {post.read_time} min read
+              {post.read_time || 0} min read
             </div>
             <div className="flex items-center gap-1">
               <Eye className="h-4 w-4" />
-              {post.views_count} views
+              {post.views_count || 0} views
             </div>
           </div>
         </header>
@@ -415,7 +553,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
         </div>
 
         {/* Tags */}
-        {post.tags.length > 0 && (
+        {post.tags && post.tags.length > 0 && (
           <div className="pt-6 border-t">
             <h3 className="text-sm font-medium mb-3">Tags</h3>
             <div className="flex flex-wrap gap-2">
@@ -429,22 +567,24 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
         )}
 
         {/* Author Bio */}
-        <div className="pt-6 border-t">
-          <div className="flex items-start gap-4">
-            <Avatar className="h-16 w-16">
-              <AvatarImage 
-                src={post.author.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`} 
-              />
-              <AvatarFallback className="text-xl">{post.author.name.charAt(0)}</AvatarFallback>
-            </Avatar>
-            <div>
-              <h3 className="font-medium text-lg">{post.author.name}</h3>
-              <p className="text-muted-foreground">
-                Trading expert and educator sharing insights to help traders succeed in the markets.
-              </p>
+        {post.author && (
+          <div className="pt-6 border-t">
+            <div className="flex items-start gap-4">
+              <Avatar className="h-16 w-16">
+                <AvatarImage 
+                  src={post.author.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`} 
+                />
+                <AvatarFallback className="text-xl">{post.author.name?.charAt(0) || 'U'}</AvatarFallback>
+              </Avatar>
+              <div>
+                <h3 className="font-medium text-lg">{post.author.name || 'Unknown Author'}</h3>
+                <p className="text-muted-foreground">
+                  Trading expert and educator sharing insights to help traders succeed in the markets.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
       </article>
 
       {/* Related Posts */}
@@ -459,7 +599,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                     <Badge variant="outline">{relatedPost.category?.name}</Badge>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {relatedPost.read_time} min
+                      {relatedPost.read_time || 0} min
                     </div>
                   </div>
                   <CardTitle className="line-clamp-2">{relatedPost.title}</CardTitle>
@@ -472,11 +612,11 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                     <div className="flex items-center gap-2">
                       <Avatar className="h-5 w-5">
                         <AvatarImage 
-                          src={relatedPost.author.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${relatedPost.author_id}`} 
+                          src={relatedPost.author?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${relatedPost.author_id}`} 
                         />
-                        <AvatarFallback className="text-xs">{relatedPost.author.name.charAt(0)}</AvatarFallback>
+                        <AvatarFallback className="text-xs">{relatedPost.author?.name?.charAt(0) || 'U'}</AvatarFallback>
                       </Avatar>
-                      <span>{relatedPost.author.name}</span>
+                      <span>{relatedPost.author?.name || 'Unknown Author'}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />

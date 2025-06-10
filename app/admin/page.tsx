@@ -170,53 +170,68 @@ export default function AdminDashboard() {
 
   async function fetchAdminData() {
     try {
-      // Fetch all users
+      // Fetch all users from the correct table
       const { data: allUsers, error: usersError } = await supabase
-        .from('profiles')
+        .from('user_profiles')
         .select('*')
         .order('created_at', { ascending: false });
-
-      if (usersError) throw usersError;
-
-      // Fetch coaches with their profiles
+  
+      if (usersError) {
+        console.error('Users error:', usersError);
+        throw usersError;
+      }
+  
+      // Fetch coaches with their user profiles
       const { data: coachData, error: coachError } = await supabase
         .from('coach_profiles')
         .select(`
           *,
-          profiles:coach_id (
-            id,
-            name,
-            email,
+          user_profiles!coach_profiles_coach_id_fkey (
+            prof_id,
             avatar_url,
+            bio,
             created_at,
-            subscription_status,
-            profile_complete
+            profile_complete,
+            linkedin,
+            twitter,
+            website
           )
         `);
-
-      if (coachError) throw coachError;
-
-      // Fetch students with their profiles
+  
+      if (coachError) {
+        console.error('Coach error:', coachError);
+        throw coachError;
+      }
+  
+      // Fetch students with their user profiles
       const { data: studentData, error: studentError } = await supabase
         .from('student_profiles')
         .select(`
           *,
-          profiles:student_id (
-            id,
-            name,
-            email,
+          user_profiles!student_profiles_student_id_fkey (
+            prof_id,
             avatar_url,
+            bio,
             created_at,
-            subscription_status,
-            profile_complete
+            profile_complete,
+            linkedin,
+            twitter,
+            website
           ),
-          coach:selected_coach_id (
-            name
+          selected_coach:selected_coach_id (
+            user_profiles!coach_profiles_coach_id_fkey (
+              prof_id,
+              avatar_url,
+              bio
+            )
           )
         `);
-
-      if (studentError) throw studentError;
-
+  
+      if (studentError) {
+        console.error('Student error:', studentError);
+        throw studentError;
+      }
+  
       // Fetch coach-student relationships through sessions
       const { data: sessionData, error: sessionError } = await supabase
         .from('sessions')
@@ -224,24 +239,36 @@ export default function AdminDashboard() {
           coach_id,
           student_id,
           created_at,
-          coach:coach_id (
-            name,
-            avatar_url
+          coach_profiles!sessions_coach_id_fkey (
+            user_profiles!coach_profiles_coach_id_fkey (
+              prof_id,
+              avatar_url,
+              bio
+            )
           ),
-          student:student_id (
-            name,
-            avatar_url
+          student_profiles!sessions_student_id_fkey (
+            user_profiles!student_profiles_student_id_fkey (
+              prof_id,
+              avatar_url,
+              bio
+            )
           )
         `)
         .eq('status', 'completed');
-
-      if (sessionError) throw sessionError;
-
+  
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw sessionError;
+      }
+  
       // Process coach-student relationships
       const relationshipMap = new Map<string, CoachStudentRelation>();
       
       sessionData?.forEach(session => {
         const key = `${session.coach_id}-${session.student_id}`;
+        const coachProfile = session.coach_profiles?.user_profiles;
+        const studentProfile = session.student_profiles?.user_profiles;
+        
         if (relationshipMap.has(key)) {
           const existing = relationshipMap.get(key)!;
           existing.session_count += 1;
@@ -251,30 +278,30 @@ export default function AdminDashboard() {
         } else {
           relationshipMap.set(key, {
             coach_id: session.coach_id,
-            coach_name: session.coach[0]?.name || 'Unknown Coach',
-            coach_avatar: session.coach[0]?.avatar_url || null,
+            coach_name: coachProfile?.bio || 'Unknown Coach',
+            coach_avatar: coachProfile?.avatar_url || null,
             student_id: session.student_id,
-            student_name: session.student[0]?.name || 'Unknown Student',
-            student_avatar: session.student[0]?.avatar_url || null,
+            student_name: studentProfile?.bio || 'Unknown Student',
+            student_avatar: studentProfile?.avatar_url || null,
             session_count: 1,
             last_session: session.created_at
           });
         }
       });
-
+  
       // Calculate stats
       const totalUsers = allUsers?.length || 0;
       const totalCoaches = coachData?.length || 0;
       const totalStudents = studentData?.length || 0;
       const verifiedCoaches = coachData?.filter(c => c.verification_status === 'verified').length || 0;
       const totalRevenue = coachData?.reduce((sum, coach) => sum + (coach.earnings || 0), 0) || 0;
-
+  
       // Get active sessions count
       const { count: activeSessions } = await supabase
         .from('sessions')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'scheduled');
-
+  
       setStats({
         totalUsers,
         totalCoaches,
@@ -283,35 +310,59 @@ export default function AdminDashboard() {
         totalRevenue,
         verifiedCoaches
       });
-
-      setUsers(allUsers || []);
+  
+      // Transform users data to match User interface
+      const transformedUsers: User[] = allUsers?.map(user => ({
+        id: user.prof_id,
+        name: user.bio || 'Unknown User',
+        email: user.prof_id, // Using prof_id as email fallback since email isn't in user_profiles
+        role: 'user',
+        avatar_url: user.avatar_url,
+        created_at: user.created_at,
+        subscription_status: 'none',
+        profile_complete: user.profile_complete
+      })) || [];
       
-      // Transform coach data
-      const transformedCoaches = coachData?.map(coach => ({
-        ...coach.profiles.coach_id,
+      // Transform coach data to match Coach interface
+      const transformedCoaches: Coach[] = coachData?.map(coach => ({
+        id: coach.user_profiles?.prof_id || coach.coach_id,
+        name: coach.user_profiles?.bio || 'Unknown Coach',
+        email: coach.user_profiles?.prof_id || coach.coach_id,
         role: 'coach',
-        verification_status: coach.verification_status,
-        rating: coach.rating,
-        total_students: coach.total_students,
-        earnings: coach.earnings,
-        hourly_rate: coach.hourly_rate,
-        expertise_areas: coach.expertise_areas
+        avatar_url: coach.user_profiles?.avatar_url || null,
+        created_at: coach.user_profiles?.created_at || '',
+        subscription_status: 'active',
+        profile_complete: coach.user_profiles?.profile_complete || false,
+        verification_status: coach.verification_status || 'pending',
+        rating: coach.rating || 0,
+        total_students: coach.total_students || 0,
+        earnings: coach.earnings || 0,
+        hourly_rate: coach.hourly_rate || 0,
+        expertise_areas: coach.expertise_areas || []
       })) || [];
-
-      // Transform student data
-      const transformedStudents = studentData?.map(student => ({
-        ...student.profiles.student_id,
+  
+      // Transform student data to match Student interface - Fix the coach_name type issue
+      const transformedStudents: Student[] = studentData?.map(student => ({
+        id: student.user_profiles?.prof_id || student.student_id,
+        name: student.user_profiles?.bio || 'Unknown Student',
+        email: student.user_profiles?.prof_id || student.student_id,
         role: 'student',
-        current_level: student.current_level,
-        tokens_earned: student.tokens_earned,
+        avatar_url: student.user_profiles?.avatar_url || null,
+        created_at: student.user_profiles?.created_at || '',
+        subscription_status: 'active',
+        profile_complete: student.user_profiles?.profile_complete || false,
+        current_level: student.current_level || 'beginner',
+        tokens_earned: student.tokens_earned || 0,
         selected_coach_id: student.selected_coach_id,
-        coach_name: student.coach?.name
+        // Fix: Convert null to undefined to match the interface
+        coach_name: student.selected_coach?.user_profiles?.bio || undefined
       })) || [];
-
+  
+      setUsers(transformedUsers);
       setCoaches(transformedCoaches);
       setStudents(transformedStudents);
       setCoachStudentRelations(Array.from(relationshipMap.values()));
-
+  
     } catch (error: any) {
       console.error('Error fetching admin data:', error);
       toast({

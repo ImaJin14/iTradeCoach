@@ -379,10 +379,19 @@ CREATE TABLE IF NOT EXISTS blog_comments (
 -- Courses
 CREATE TABLE IF NOT EXISTS courses (
     id bigint PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    student_id uuid NOT NULL REFERENCES student_profiles(student_id) ON DELETE CASCADE,
+    student_id uuid REFERENCES student_profiles(student_id) ON DELETE CASCADE, -- Made optional
     coach_id uuid NOT NULL REFERENCES coach_profiles(coach_id) ON DELETE CASCADE,
     title text NOT NULL,
     description text,
+    level text CHECK (level IN ('beginner', 'intermediate', 'advanced')),
+    category text,
+    duration text,
+    price decimal(10,2) DEFAULT 0,
+    thumbnail text,
+    learning_objectives text,
+    prerequisites text,
+    tags text[],
+    status text DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
     is_hidden boolean DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
@@ -1001,6 +1010,18 @@ CREATE POLICY "Users can update their own testimonials"
     ON testimonials FOR UPDATE TO authenticated
     USING (auth.uid() = author_id);
 
+-- Allow public read access to profiles table for counting
+CREATE POLICY "Allow public read access for stats" ON profiles
+FOR SELECT USING (true);
+
+-- Allow public read access to coach_profiles table for counting
+CREATE POLICY "Allow public read access for stats" ON coach_profiles
+FOR SELECT USING (true);
+
+-- Allow public read access to sessions table for counting
+CREATE POLICY "Allow public read access for stats" ON sessions
+FOR SELECT USING (true);
+
 -- ================================================================
 -- SECTION 13: INDEXES FOR PERFORMANCE
 -- ================================================================
@@ -1187,6 +1208,19 @@ LEFT JOIN sessions s ON sp.student_id = s.student_id
 LEFT JOIN session_enrollments se ON sp.student_id = se.student_id
 GROUP BY sp.student_id, p.name, sp.current_level, sp.tokens_earned, 
          sp.courses_completed, sp.selected_coach_id;
+
+-- Create a view that calculates stats
+CREATE OR REPLACE VIEW public_platform_stats AS
+SELECT 
+  (SELECT COUNT(*) FROM profiles) as total_users,
+  (SELECT COUNT(*) FROM coach_profiles WHERE verification_status = 'verified') as expert_count,
+  (SELECT COUNT(*) FROM sessions WHERE status = 'completed') as session_count,
+  (SELECT ROUND(AVG(rating)::numeric, 2) FROM coach_profiles WHERE verification_status = 'verified' AND rating > 0) as avg_rating,
+  (SELECT COUNT(DISTINCT unnest(expertise_areas)) FROM coach_profiles WHERE verification_status = 'verified') as topic_count;
+
+-- Allow public access to this view
+CREATE POLICY "Allow public read access" ON public_platform_stats
+FOR SELECT USING (true);
 
 -- View for upcoming sessions
 CREATE OR REPLACE VIEW upcoming_sessions AS

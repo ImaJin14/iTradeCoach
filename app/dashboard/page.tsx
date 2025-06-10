@@ -45,55 +45,70 @@ export default function DashboardPage() {
         if (userError || !user) {
           throw new Error('Not authenticated');
         }
-
-        // Get user profile with role
+    
+        // Get user profile with role from profiles table
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('*')
+          .select(`*`)
           .eq('id', user.id)
           .single();
-
+    
         if (profileError) throw profileError;
-
-        // Get upcoming sessions based on role
+    
+        // Get user_profile data for avatar
+        const { data: userProfile } = await supabase
+          .from('user_profiles')
+          .select('avatar_url')
+          .eq('prof_id', user.id)
+          .single();
+    
+        // Get upcoming sessions with proper joins following your schema
         let sessionsQuery = supabase
           .from('sessions')
           .select(`
-            id,
-            scheduled_time,
-            notes,
-            status,
-            coach:coach_id(name, avatar_url),
-            student:student_id(name, avatar_url)
+            *,
+            student_profiles!sessions_student_id_fkey (
+              student_id,
+              user_profiles!student_profiles_student_id_fkey (
+                avatar_url,
+                prof_id
+              )
+            ),
+            coach_profiles!sessions_coach_id_fkey (
+              coach_id,
+              user_profiles!coach_profiles_coach_id_fkey (
+                avatar_url,
+                prof_id
+              )
+            )
           `)
           .eq('status', 'scheduled')
-          .order('scheduled_time', { ascending: true })
-          .limit(3);
-
-        // For admin users, get all scheduled sessions to monitor
+          .order('scheduled_time', { ascending: true });
+    
+        // Apply role-based filtering and limits
         if (profile.role === 'admin') {
-          // Admin sees all scheduled sessions for monitoring
-          sessionsQuery = supabase
-            .from('sessions')
-            .select(`
-              id,
-              scheduled_time,
-              notes,
-              status,
-              coach:coach_id(name, avatar_url),
-              student:student_id(name, avatar_url)
-            `)
-            .eq('status', 'scheduled')
-            .order('scheduled_time', { ascending: true })
-            .limit(5);
+          sessionsQuery = sessionsQuery.limit(5);
         } else {
-          // Regular users see only their sessions
-          sessionsQuery = sessionsQuery.or(`coach_id.eq.${user.id},student_id.eq.${user.id}`);
+          sessionsQuery = sessionsQuery
+            .or(`coach_id.eq.${user.id},student_id.eq.${user.id}`)
+            .limit(3);
         }
-
+    
         const { data: sessions, error: sessionsError } = await sessionsQuery;
         if (sessionsError) throw sessionsError;
-
+    
+        // We need to get the names separately since they're in the profiles table
+        const sessionIds = sessions?.map(s => [s.coach_id, s.student_id]).flat() || [];
+        const uniqueIds = sessionIds.filter((id, index, arr) => arr.indexOf(id) === index);
+        
+        const { data: sessionProfiles } = await supabase
+          .from('profiles')
+          .select('id, name')
+          .in('id', uniqueIds);
+    
+        // Create a lookup map for names
+        const nameMap = new Map(sessionProfiles?.map(p => [p.id, p.name]) || []);
+    
         // Get role-specific data
         let roleSpecificData = {};
         if (profile.role === 'student') {
@@ -102,7 +117,7 @@ export default function DashboardPage() {
             .select('*')
             .eq('student_id', user.id)
             .maybeSingle();
-
+    
           roleSpecificData = {
             tokensEarned: studentProfile?.tokens_earned || 0
           };
@@ -112,65 +127,81 @@ export default function DashboardPage() {
             .select('*')
             .eq('coach_id', user.id)
             .maybeSingle();
-
+    
           roleSpecificData = {
             rating: coachProfile?.rating || 0,
             totalStudents: coachProfile?.total_students || 0,
             totalEarnings: coachProfile?.earnings || 0
           };
         }
-
+    
         // Format sessions data
         const formattedSessions = sessions?.map(session => {
           if (profile.role === 'admin') {
             // Admin sees coach-student pairs
-            return {
-              id: session.id,
-              date: new Date(session.scheduled_time).toLocaleDateString(),
-              time: new Date(session.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              otherPartyName: `${session.coach.name} → ${session.student.name}`,
-              otherPartyAvatar: session.coach.avatar_url,
-              topic: session.notes || 'Coaching Session',
-              status: session.status
-            };
-          } else {
-            // Regular users see their counterpart
-            const isCoach = session.coach.id === user.id;
-            const otherParty = isCoach ? session.student : session.coach;
+            const coachName = nameMap.get(session.coach_id) || 'Coach';
+            const studentName = nameMap.get(session.student_id) || 'Student';
             
             return {
               id: session.id,
               date: new Date(session.scheduled_time).toLocaleDateString(),
-              time: new Date(session.scheduled_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              otherPartyName: otherParty.name,
-              otherPartyAvatar: otherParty.avatar_url,
+              time: new Date(session.scheduled_time).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              }),
+              otherPartyName: `${coachName} → ${studentName}`,
+              otherPartyAvatar: session.coach_profiles?.user_profiles?.avatar_url || null,
               topic: session.notes || 'Coaching Session',
-              status: session.status
+              status: session.status || 'scheduled'
+            };
+          } else {
+            // Regular users see their counterpart
+            const isCoach = session.coach_id === user.id;
+            const otherPartyId = isCoach ? session.student_id : session.coach_id;
+            const otherPartyName = nameMap.get(otherPartyId) || 'Unknown';
+            
+            // Get avatar from the appropriate profile
+            const otherPartyAvatar = isCoach 
+              ? session.student_profiles?.user_profiles?.avatar_url 
+              : session.coach_profiles?.user_profiles?.avatar_url;
+            
+            return {
+              id: session.id,
+              date: new Date(session.scheduled_time).toLocaleDateString(),
+              time: new Date(session.scheduled_time).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+              }),
+              otherPartyName,
+              otherPartyAvatar: otherPartyAvatar || null,
+              topic: session.notes || 'Coaching Session',
+              status: session.status || 'scheduled'
             };
           }
-        });
-
+        }) || [];
+    
         // Count completed sessions
         let completedSessionsQuery = supabase
           .from('sessions')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'completed');
-
+    
         if (profile.role !== 'admin') {
-          completedSessionsQuery = completedSessionsQuery.or(`coach_id.eq.${user.id},student_id.eq.${user.id}`);
+          completedSessionsQuery = completedSessionsQuery
+            .or(`coach_id.eq.${user.id},student_id.eq.${user.id}`);
         }
-
+    
         const { count: completedSessions } = await completedSessionsQuery;
-
+    
         setData({
-          role: profile.role,
-          name: profile.name,
-          avatarUrl: profile.avatar_url,
+          role: (profile.role as 'student' | 'coach' | 'admin') || 'student',
+          name: profile.name || 'User',
+          avatarUrl: userProfile?.avatar_url || null,
           stats: {
             sessionsCompleted: completedSessions || 0,
             ...roleSpecificData
           },
-          upcomingSessions: formattedSessions || []
+          upcomingSessions: formattedSessions
         });
       } catch (error: any) {
         console.error("Error fetching dashboard data:", error);
