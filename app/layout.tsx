@@ -1,9 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { ThemeProvider } from '@/components/theme-provider';
-import { Toaster } from "@/components/ui/toaster";
-import Header from '@/components/layout/header';
-import Footer from '@/components/layout/footer';
+import ClientLayout from './client-layout';
 
 export const metadata: Metadata = {
   title: 'iTradeCoach - Expert Trading & Investment Coaching',
@@ -24,21 +21,9 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans">
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <div className="flex min-h-screen flex-col">
-            <Header />
-            <main className="flex-1 flex flex-col items-center">
-              {children}
-            </main>
-            <Footer />
-          </div>
-          <Toaster />
-        </ThemeProvider>
+        <ClientLayout>
+          {children}
+        </ClientLayout>
       </body>
     </html>
   );

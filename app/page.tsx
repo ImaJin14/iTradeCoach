@@ -38,14 +38,14 @@ export default function Home() {
         <div className="container mx-auto px-4">
           <div className="text-center max-w-2xl mx-auto">
             <h2 className="text-3xl md:text-4xl font-bold">How It Works</h2>
-            <p className="mt-4 text-muted-foreground">Three simple steps to start your crypto learning journey</p>
+            <p className="mt-4 text-muted-foreground">Three simple steps to start your Trading learning journey</p>
           </div>
           
           <div className="mt-12 grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
             {[
               {
                 title: "Find Your Coach",
-                description: "Browse our marketplace of verified crypto experts and find the perfect match for your goals and budget.",
+                description: "Browse our marketplace of verified trading experts and find the perfect match for your goals and budget.",
                 icon: "🔍",
                 color: "from-blue-500/20 to-blue-500/5"
               },
@@ -136,20 +136,20 @@ export default function Home() {
             {[
               {
                 title: "Beginner",
-                description: "Master the fundamentals of cryptocurrency and blockchain technology",
-                topics: ["Crypto Basics", "Wallet Setup", "Exchange Trading", "Security Fundamentals"],
+                description: "Master the fundamentals of Trading and Crypto",
+                topics: ["Basics(Forex Snd Crypto)",  "Trading Sessions(Forex)", "Lot Sizing(Forex)", "Leveraging(Crypto)", "Accounts setups", "Simple Market Structure"],
                 color: "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10"
               },
               {
                 title: "Intermediate",
-                description: "Dive deeper into DeFi, NFTs, and investment strategies",
-                topics: ["DeFi Protocols", "Yield Farming", "NFT Marketplaces", "Technical Analysis"],
+                description: "Dive into investment strategies",
+                topics: ["Technical Analysis", "Risk Management", "Money Management", "Trade Management", "Basic Trading Strategies"],
                 color: "border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10"
               },
               {
                 title: "Advanced",
                 description: "Explore complex topics like tokenomics, DAOs and development",
-                topics: ["Smart Contracts", "Tokenomics", "DAO Governance", "Market Analysis"],
+                topics: ["Advance Market Structure", "Trading Plan (including a tested strategy)", "Trading Psychology", "Spot Trading (Cryptocurrency)", "Others"],
                 color: "border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10"
               }
             ].map((path, i) => (
@@ -184,9 +184,9 @@ export default function Home() {
       {/* CTA */}
       <section className="py-16 md:py-24 bg-primary text-primary-foreground w-full">
         <div className="container mx-auto px-4 text-center">
-          <h2 className="text-3xl md:text-4xl font-bold">Ready to Master Cryptocurrency?</h2>
+          <h2 className="text-3xl md:text-4xl font-bold">Ready to Master Trading?</h2>
           <p className="mt-4 text-primary-foreground/80 max-w-2xl mx-auto">
-            Join thousands of students who are accelerating their crypto journey with personalized coaching
+            Join thousands of students who are accelerating their trading journey with personalized coaching
           </p>
           <Button asChild size="lg" variant="secondary" className="mt-8">
             <Link href="/sign-up">Get Started Today</Link>

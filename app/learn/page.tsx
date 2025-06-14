@@ -325,16 +325,16 @@ export default function LearnPage() {
         {[
           {
             title: "Beginner",
-            description: "Master the fundamentals of cryptocurrency and blockchain technology",
-            topics: ["Crypto Basics", "Wallet Setup", "Exchange Trading", "Security Fundamentals"],
+            description: "Master the fundamentals of Trading and Crypto",
+            topics: ["Basics(Forex Snd Crypto)",  "Trading Sessions(Forex)", "Lot Sizing(Forex)", "Leveraging(Crypto)", "Accounts setups", "Simple Market Structure"],
             color: "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10",
             recommended: stats?.currentLevel === 'beginner',
             path: 'beginner'
           },
           {
             title: "Intermediate",
-            description: "Dive deeper into DeFi, NFTs, and investment strategies",
-            topics: ["DeFi Protocols", "Yield Farming", "NFT Marketplaces", "Technical Analysis"],
+            description: "Dive into investment strategies",
+            topics: ["Technical Analysis", "Risk Management", "Money Management", "Trade Management", "Basic Trading Strategies"],
             color: "border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10",
             recommended: stats?.currentLevel === 'intermediate',
             path: 'intermediate'
@@ -342,7 +342,7 @@ export default function LearnPage() {
           {
             title: "Advanced",
             description: "Explore complex topics like tokenomics, DAOs and development",
-            topics: ["Smart Contracts", "Tokenomics", "DAO Governance", "Market Analysis"],
+            topics: ["Advance Market Structure", "Trading Plan (including a tested strategy)", "Trading Psychology", "Spot Trading (Cryptocurrency)", "Others"],
             color: "border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10",
             recommended: stats?.currentLevel === 'advanced',
             path: 'advanced'

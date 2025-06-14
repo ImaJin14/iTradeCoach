@@ -342,7 +342,6 @@ export default function CommunityPage() {
         </Button>
       </div>
 
-// Replace the stats section in your community page:
 
       {stats && (
         <div className="grid gap-8 md:grid-cols-4 max-w-5xl mx-auto">
