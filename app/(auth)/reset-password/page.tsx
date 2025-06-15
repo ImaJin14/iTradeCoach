@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { LineChart, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
 import {
   Card,
   CardContent,
@@ -42,7 +43,36 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>;
 
-export default function ResetPassword() {
+// Loading component for Suspense fallback
+function ResetPasswordLoading() {
+  return (
+    <div className="container flex h-screen flex-col items-center justify-center">
+      <Link href="/" className="absolute left-4 top-4 md:left-8 md:top-8 flex items-center">
+        <LineChart className="h-6 w-6 mr-2" />
+        <span className="font-bold">iTradeCoach</span>
+      </Link>
+      
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold text-center">Reset password</CardTitle>
+          <CardDescription className="text-center">
+            Loading...
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="h-20 bg-gray-100 rounded animate-pulse"></div>
+            <div className="h-20 bg-gray-100 rounded animate-pulse"></div>
+            <div className="h-10 bg-gray-100 rounded animate-pulse"></div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Main component that uses useSearchParams
+function ResetPasswordForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -159,7 +189,7 @@ export default function ResetPassword() {
                       <div className="relative">
                         <Input 
                           type={showConfirmPassword ? "text" : "password"} 
-                          placeholder="password" 
+                          placeholder="••••••••" 
                           {...field} 
                         />
                         <Button
@@ -197,5 +227,14 @@ export default function ResetPassword() {
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+// Main exported component with Suspense boundary
+export default function ResetPassword() {
+  return (
+    <Suspense fallback={<ResetPasswordLoading />}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
