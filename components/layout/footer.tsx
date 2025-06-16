@@ -52,16 +52,16 @@ export default function Footer() {
           <div className="flex flex-col gap-2">
             <h3 className="font-medium">Company</h3>
             <nav className="flex flex-col gap-2">
-              <Link href="/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/company/about" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 About Us
               </Link>
-              <Link href="/careers" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/company/careers" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Careers
               </Link>
-              <Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/company/contact" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Contact
               </Link>
-              <Link href="/press" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/company/press" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Press
               </Link>
             </nav>
@@ -69,13 +69,13 @@ export default function Footer() {
           <div className="flex flex-col gap-2 sm:col-span-2 md:col-span-1">
             <h3 className="font-medium">Legal</h3>
             <nav className="flex flex-col gap-2">
-              <Link href="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/legal/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Terms of Service
               </Link>
-              <Link href="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/legal/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Privacy Policy
               </Link>
-              <Link href="/cookies" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link href="/legal/cookies" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 Cookie Policy
               </Link>
             </nav>
