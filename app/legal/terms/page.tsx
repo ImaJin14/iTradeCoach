@@ -237,7 +237,7 @@ export default function TermsOfService() {
               </section>
 
               {/* Contact */}
-              <section id="contact" className="scroll-mt-20">
+              {/* <section id="contact" className="scroll-mt-20">
                 <h2 className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">12. Contact Information</h2>
                 
                 <p className="text-gray-600 dark:text-gray-300 mb-8 text-lg leading-relaxed">
@@ -269,7 +269,7 @@ export default function TermsOfService() {
                   <p className="text-gray-600 dark:text-gray-300">Monday - Friday: 9:00 AM - 6:00 PM EST</p>
                   <p className="text-gray-600 dark:text-gray-300 text-sm mt-2">We typically respond to legal inquiries within 2-3 business days.</p>
                 </div>
-              </section>
+              </section> */}
             </div>
           </div>
         </div>

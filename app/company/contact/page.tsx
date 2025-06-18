@@ -145,7 +145,7 @@ export default function Contact() {
           </div>
 
           {/* Contact Options */}
-          <div className="grid md:grid-cols-2 gap-6 mb-16">
+          {/* <div className="grid md:grid-cols-2 gap-6 mb-16">
             {contactOptions.map((option, index) => (
               <div key={index} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
                 <div className="flex items-start gap-4">
@@ -168,7 +168,7 @@ export default function Contact() {
                 </div>
               </div>
             ))}
-          </div>
+          </div> */}
 
           {/* Contact Form */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 mb-16">

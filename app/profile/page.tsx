@@ -27,7 +27,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Upload } from "lucide-react";
+import { Loader2, Upload, CheckCircle, AlertCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -36,6 +36,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -46,11 +54,13 @@ const profileFormSchema = z.object({
   website: z.string().url({ message: "Please enter a valid URL" }).optional().or(z.literal("")),
   twitter: z.string().optional(),
   linkedin: z.string().optional(),
+  role: z.enum(["student", "coach"], {
+    required_error: "Please select your role",
+  }),
 });
 
 type ProfileFormValues = z.infer<typeof profileFormSchema>;
 
-// Define proper types for the profile data
 interface UserProfile {
   bio: string | null;
   website: string | null;
@@ -77,6 +87,9 @@ export default function ProfilePage() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [showPreviewDialog, setShowPreviewDialog] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isOAuthUser, setIsOAuthUser] = useState(false);
+  const [profileComplete, setProfileComplete] = useState(false);
+  const [authProvider, setAuthProvider] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -88,6 +101,7 @@ export default function ProfilePage() {
       website: "",
       twitter: "",
       linkedin: "",
+      role: "student",
     },
   });
 
@@ -101,7 +115,13 @@ export default function ProfilePage() {
           return;
         }
 
-        // First get the profile data
+        // Check if user is OAuth user
+        const isOAuth = user.app_metadata.provider !== 'email';
+        const provider = user.app_metadata.provider ?? null;
+        setIsOAuthUser(isOAuth);
+        setAuthProvider(provider);
+
+        // Get profile data
         const { data: profileData, error: profileError } = await supabase
           .from('profiles')
           .select('id, name, email, role, subscription_status')
@@ -110,7 +130,7 @@ export default function ProfilePage() {
 
         if (profileError) throw profileError;
 
-        // Then get the user profile data
+        // Get user profile data
         const { data: userProfileData, error: userProfileError } = await supabase
           .from('user_profiles')
           .select('bio, website, twitter, linkedin, avatar_url, profile_complete')
@@ -119,16 +139,39 @@ export default function ProfilePage() {
 
         if (userProfileError) throw userProfileError;
 
-        // Set avatar URL
-        setAvatarUrl(userProfileData?.avatar_url || null);
+        setProfileComplete(userProfileData?.profile_complete || false);
+
+        // For OAuth users, try to get info from user metadata if profile is incomplete
+        let initialName = profileData?.name;
+        let initialAvatarUrl = userProfileData?.avatar_url;
+
+        if (isOAuth && !userProfileData?.profile_complete) {
+          // Get name from OAuth metadata if not set
+          if (!initialName) {
+            initialName = user.user_metadata?.full_name || 
+                         user.user_metadata?.name || 
+                         user.user_metadata?.display_name || 
+                         "";
+          }
+          
+          // Get avatar from OAuth if not set
+          if (!initialAvatarUrl) {
+            initialAvatarUrl = user.user_metadata?.avatar_url || 
+                              user.user_metadata?.picture || 
+                              null;
+          }
+        }
+
+        setAvatarUrl(initialAvatarUrl ?? null);
         
         // Reset form with the correct data
         form.reset({
-          name: profileData?.name || "",
+          name: initialName || "",
           bio: userProfileData?.bio || "",
           website: userProfileData?.website || "",
           twitter: userProfileData?.twitter || "",
           linkedin: userProfileData?.linkedin || "",
+          role: (profileData?.role as "student" | "coach") || "student",
         });
 
       } catch (error) {
@@ -198,7 +241,7 @@ export default function ProfilePage() {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL - fixed the destructuring
+      // Get public URL
       const { data } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
@@ -208,11 +251,13 @@ export default function ProfilePage() {
       // Update avatar_url in user_profiles table
       const { error: updateError } = await supabase
         .from('user_profiles')
-        .update({ 
+        .upsert({ 
+          prof_id: user.id,
           avatar_url: publicUrl,
           updated_at: new Date().toISOString()
-        })
-        .eq('prof_id', user.id);
+        }, {
+          onConflict: 'prof_id'
+        });
 
       if (updateError) throw updateError;
 
@@ -245,32 +290,51 @@ export default function ProfilePage() {
         throw new Error('Not authenticated');
       }
 
-      // Update name in profiles table
+      // Update name and role in profiles table
       const { error: profileUpdateError } = await supabase
         .from('profiles')
         .update({
           name: data.name,
+          role: data.role,
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
 
       if (profileUpdateError) throw profileUpdateError;
 
-      // Update profile details in user_profiles table
+      // Update profile details in user_profiles table (upsert for OAuth users who might not have a record)
       const { error: userProfileUpdateError } = await supabase
         .from('user_profiles')
-        .update({
+        .upsert({
+          prof_id: user.id,
           bio: data.bio,
           website: data.website,
           twitter: data.twitter,
           linkedin: data.linkedin,
-          profile_complete: true, // Mark profile as complete
+          profile_complete: true,
           updated_at: new Date().toISOString(),
-        })
-        .eq('prof_id', user.id);
+        }, {
+          onConflict: 'prof_id'
+        });
 
       if (userProfileUpdateError) throw userProfileUpdateError;
 
+      // For OAuth users, also update their auth metadata
+      if (isOAuthUser) {
+        const { error: authUpdateError } = await supabase.auth.updateUser({
+          data: {
+            role: data.role,
+            profile_complete: true,
+          }
+        });
+
+        if (authUpdateError) {
+          console.warn('Failed to update auth metadata:', authUpdateError);
+          // Don't throw error as main profile update succeeded
+        }
+      }
+
+      setProfileComplete(true);
       toast({
         title: "Profile updated",
         description: "Your profile has been successfully updated.",
@@ -301,9 +365,34 @@ export default function ProfilePage() {
     <div className="container py-8 max-w-2xl">
       <Card>
         <CardHeader>
-          <CardTitle>Profile</CardTitle>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                Profile
+                {profileComplete ? (
+                  <Badge variant="default" className="text-xs">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Complete
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-xs">
+                    <AlertCircle className="h-3 w-3 mr-1" />
+                    Incomplete
+                  </Badge>
+                )}
+              </CardTitle>
+              {isOAuthUser && (
+                <Badge variant="secondary" className="text-xs mt-2">
+                  {authProvider === 'google' ? 'Google Account' : 
+                   authProvider === 'apple' ? 'Apple Account' : 
+                   `${authProvider} Account`}
+                </Badge>
+              )}
+            </div>
+          </div>
           <CardDescription>
             Manage your public profile information
+            {!profileComplete && " (Please complete your profile)"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -335,8 +424,13 @@ export default function ProfilePage() {
                 </label>
               </div>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">
+            <p className="mt-4 text-sm text-muted-foreground text-center">
               Upload a photo for your profile
+              {isOAuthUser && avatarUrl && (
+                <span className="block text-xs mt-1">
+                  Current photo from {authProvider}
+                </span>
+              )}
             </p>
           </div>
 
@@ -347,10 +441,40 @@ export default function ProfilePage() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>Name *</FormLabel>
                     <FormControl>
                       <Input placeholder="Your name" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Role *</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select your role" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="student">Student - Learn Trading</SelectItem>
+                        <SelectItem value="coach">Coach - Teach Trading</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {isOAuthUser && !profileComplete && 
+                        "Please select your role to complete your profile setup"
+                      }
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -419,9 +543,15 @@ export default function ProfilePage() {
                 )}
               />
               
-              <Button type="submit" disabled={isSaving}>
+              <Button type="submit" disabled={isSaving} className="w-full">
                 {isSaving ? "Saving..." : "Save changes"}
               </Button>
+
+              {!profileComplete && (
+                <p className="text-sm text-muted-foreground text-center">
+                  Complete your profile to access all features
+                </p>
+              )}
             </form>
           </Form>
         </CardContent>

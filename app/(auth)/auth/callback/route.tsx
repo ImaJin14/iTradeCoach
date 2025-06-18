@@ -1,33 +1,4 @@
-// import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-// import { cookies } from 'next/headers';
-// import { NextResponse } from 'next/server';
-
-//  export const dynamic = 'force-dynamic';
-
-// export async function GET(request: Request) {
-//   const requestUrl = new URL(request.url);
-//   const code = requestUrl.searchParams.get('code');
-
-//   if (code) {
-//     const cookieStore = cookies();
-//     const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-    
-//     try {
-//       await supabase.auth.exchangeCodeForSession(code);
-//     } catch (error) {
-//       console.error('Error exchanging code for session:', error);
-//       // Redirect to sign-in page on error
-//       return NextResponse.redirect(new URL('/sign-in?error=auth_error', request.url));
-//     }
-//   }
-
-//   // URL to redirect to after sign in process completes
-//   return NextResponse.redirect(new URL('/dashboard', request.url));
-// }
-
-// export const revalidate = false;
-
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
@@ -48,10 +19,33 @@ export async function GET(request: Request) {
   }
 
   if (code) {
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-    
     try {
+      // Await cookies() as required in Next.js 15
+      const cookieStore = await cookies();
+      
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() {
+              return cookieStore.getAll();
+            },
+            setAll(cookiesToSet: Array<{ name: string; value: string; options?: any }>) {
+              try {
+                cookiesToSet.forEach(({ name, value, options }) =>
+                  cookieStore.set(name, value, options)
+                );
+              } catch {
+                // The `setAll` method was called from a Server Component.
+                // This can be ignored if you have middleware refreshing
+                // user sessions.
+              }
+            },
+          },
+        }
+      );
+      
       // Exchange code for session
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);
       
@@ -70,8 +64,29 @@ export async function GET(request: Request) {
         );
       }
 
-      // Successfully authenticated - redirect to dashboard or intended page
-      return NextResponse.redirect(new URL(next, request.url));
+      console.log('User successfully authenticated:', data.user.email);
+
+      // For OAuth users, check if we need to collect additional info (like role)
+      const userMetadata = data.user.user_metadata;
+      const appMetadata = data.user.app_metadata;
+      
+      // If this is an OAuth user without a role, redirect to complete profile
+      if (data.user.app_metadata.provider !== 'email' && !userMetadata.role && !appMetadata.role) {
+        return NextResponse.redirect(
+          new URL('/complete-profile?from=oauth', request.url)
+        );
+      }
+
+      // Successfully authenticated - force redirect to dashboard
+      const redirectUrl = new URL(next, request.url);
+      const response = NextResponse.redirect(redirectUrl);
+      
+      // Add cache control headers to prevent caching
+      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+      
+      return response;
       
     } catch (error) {
       console.error('Unexpected error during auth callback:', error);

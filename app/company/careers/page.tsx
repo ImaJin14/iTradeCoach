@@ -209,7 +209,7 @@ export default function Careers() {
           </div>
 
           {/* Open Positions */}
-          <div className="mb-16">
+          {/* <div className="mb-16">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white text-center mb-12">Open Positions</h2>
             <div className="space-y-6">
               {openPositions.map((position) => (
@@ -257,7 +257,7 @@ export default function Careers() {
                 </div>
               ))}
             </div>
-          </div>
+          </div> */}
 
           {/* Application Process */}
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-8 mb-16">
@@ -281,7 +281,7 @@ export default function Careers() {
           </div>
 
           {/* Contact */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
+          {/* <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-6">Don't See a Perfect Fit?</h2>
             <p className="text-lg text-gray-600 dark:text-gray-300 mb-6 leading-relaxed">
               We're always looking for exceptional talent. If you're passionate about our mission and believe you can contribute to our team, we'd love to hear from you.
@@ -297,7 +297,7 @@ export default function Careers() {
             <p className="text-gray-500 dark:text-gray-400 mt-6">
               Questions? Email us at <a href="mailto:careers@itradecoach.com" className="text-blue-600 dark:text-blue-400 hover:underline">careers@itradecoach.com</a>
             </p>
-          </div>
+          </div> */}
         </div>
       </div>
     </>

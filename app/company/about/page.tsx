@@ -185,7 +185,7 @@ export default function AboutUs() {
           </div>
 
           {/* Team Section */}
-          <div className="mb-16">
+          {/* <div className="mb-16">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white text-center mb-12">Our Team</h2>
             <div className="grid md:grid-cols-2 gap-6">
               {team.map((department, index) => (
@@ -200,7 +200,7 @@ export default function AboutUs() {
                 </div>
               ))}
             </div>
-          </div>
+          </div> */}
 
           {/* Vision Section */}
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-8 text-center">

@@ -137,7 +137,7 @@ export default function Press() {
           </div>
 
           {/* Quick Company Facts */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 mb-16">
+          {/* <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 mb-16">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white text-center mb-8">Company at a Glance</h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {companyStats.map((stat, index) => (
@@ -147,10 +147,10 @@ export default function Press() {
                 </div>
               ))}
             </div>
-          </div>
+          </div> */}
 
           {/* Recent News */}
-          <div className="mb-16">
+          {/* <div className="mb-16">
             <div className="flex items-center gap-3 mb-8">
               <NewspaperIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Recent News</h2>
@@ -181,10 +181,10 @@ export default function Press() {
                 </div>
               ))}
             </div>
-          </div>
+          </div> */}
 
           {/* Media Kit */}
-          <div className="mb-16">
+          {/* <div className="mb-16">
             <div className="flex items-center gap-3 mb-8">
               <ArrowDownTrayIcon className="h-8 w-8 text-blue-600 dark:text-blue-400" />
               <h2 className="text-3xl font-bold text-gray-900 dark:text-white">Media Kit</h2>
@@ -210,7 +210,7 @@ export default function Press() {
                 </div>
               ))}
             </div>
-          </div>
+          </div> */}
 
           {/* Key Messages */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 mb-16">
@@ -226,7 +226,7 @@ export default function Press() {
           </div>
 
           {/* Contact Information */}
-          <div className="grid md:grid-cols-2 gap-6 mb-16">
+          {/* <div className="grid md:grid-cols-2 gap-6 mb-16">
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
               <div className="flex items-start gap-3 mb-4">
                 <UserGroupIcon className="h-6 w-6 text-blue-600 dark:text-blue-400 mt-1" />
@@ -262,7 +262,7 @@ export default function Press() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* Press Guidelines */}
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800 p-8">

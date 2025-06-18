@@ -306,11 +306,11 @@ export default function PrivacyPolicy() {
                     <div className="grid md:grid-cols-2 gap-4">
                       <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
                         <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Payment Processors</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Stripe, PayPal for secure payment processing</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">RevenueCat for secure payment processing</p>
                       </div>
                       <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
                         <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Cloud Services</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">AWS, Google Cloud for hosting and storage</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">For now, Supabase and Netlify</p>
                       </div>
                       <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
                         <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Communication</h4>
@@ -348,16 +348,16 @@ export default function PrivacyPolicy() {
                   ))}
                 </div>
 
-                <div className="mt-8">
+                {/* <div className="mt-8">
                   <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Exercising Your Rights</h3>
                   <p className="text-gray-600 dark:text-gray-300 leading-relaxed">
                     To exercise any of these rights, please contact us at privacy@itradecoach.com. We will respond to your request within 30 days.
                   </p>
-                </div>
+                </div> */}
               </section>
 
               {/* Contact */}
-              <section id="contact" className="scroll-mt-20">
+              {/* <section id="contact" className="scroll-mt-20">
                 <h2 className="text-3xl font-bold mb-6 text-gray-900 dark:text-white">Contact Information</h2>
                 
                 <p className="text-gray-600 dark:text-gray-300 mb-8 text-lg leading-relaxed">
@@ -385,7 +385,7 @@ export default function PrivacyPolicy() {
                   <h3 className="font-semibold mb-3 text-gray-900 dark:text-white">Response Time</h3>
                   <p className="text-gray-600 dark:text-gray-300">We aim to respond to all privacy inquiries within 30 days. For urgent security concerns, we typically respond within 24-48 hours.</p>
                 </div>
-              </section>
+              </section> */}
             </div>
           </div>
         </div>
