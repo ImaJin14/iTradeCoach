@@ -510,22 +510,42 @@ export default function PricingPage() {
 
   const formatPrice = (pkg: Package) => {
     const product = pkg.webBillingProduct;
-    if (!product || !product.price) return { display: 'N/A', period: '', subtitle: null };
+    if (!product) return { display: 'N/A', period: '', subtitle: null };
 
     const isYearly = pkg.identifier.includes('yearly') || pkg.identifier.includes('annual');
     
-    if (isYearly) {
+    // Try to get price information from different possible properties
+    let priceAmount: number | undefined;
+    let formattedPrice: string | undefined;
+    
+    // Check for different possible price property structures
+    if ('price' in product && product.price) {
+      const priceObj = product.price as any;
+      priceAmount = priceObj.amount;
+      formattedPrice = priceObj.formattedPrice;
+    } else if ('currentPrice' in product) {
+      const currentPrice = (product as any).currentPrice;
+      priceAmount = currentPrice.amount || currentPrice;
+      formattedPrice = currentPrice.formattedPrice || `${currentPrice}`;
+    } else if ('priceString' in product) {
+      formattedPrice = (product as any).priceString;
+    } else if ('displayName' in product && 'identifier' in product) {
+      // Fallback to manual formatting if no price info is available
+      formattedPrice = 'Contact for pricing';
+    }
+    
+    if (isYearly && priceAmount) {
       // Calculate monthly price for yearly plans
-      const monthlyPrice = Math.round(product.price.amount / 12);
+      const monthlyPrice = Math.round(priceAmount / 12);
       return {
-        display: `$${monthlyPrice}`,
+        display: `${monthlyPrice}`,
         period: '/month',
-        subtitle: `Billed annually (${product.price.formattedPrice}/year)`
+        subtitle: `Billed annually (${formattedPrice || `${priceAmount}`}/year)`
       };
     }
 
     return {
-      display: product.price.formattedPrice,
+      display: formattedPrice || 'N/A',
       period: pkg.identifier.includes('monthly') ? '/month' : '',
       subtitle: null
     };
