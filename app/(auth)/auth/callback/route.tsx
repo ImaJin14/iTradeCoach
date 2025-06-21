@@ -1,3 +1,4 @@
+import { siteConfig } from '@/lib/config';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
@@ -14,8 +15,8 @@ export async function GET(request: Request) {
   if (error) {
     console.error('Auth error from Supabase:', error);
     return NextResponse.redirect(
-      new URL(`/sign-in?error=${encodeURIComponent(error)}`, request.url)
-    );
+      new URL(`/sign-in?error=${encodeURIComponent(error)}`, siteConfig.url)
+        );
   }
 
   if (code) {

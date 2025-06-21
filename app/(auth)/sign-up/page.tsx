@@ -35,6 +35,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
+import { siteConfig } from '@/lib/config';
 
 const formSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
@@ -103,7 +104,7 @@ export default function SignUp() {
             name: data.name,
             role: data.role,
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`
+        emailRedirectTo: getCallbackUrl('/dashboard')
         }
       });
 
@@ -143,7 +144,7 @@ export default function SignUp() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+          redirectTo: getCallbackUrl('/dashboard'),
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
