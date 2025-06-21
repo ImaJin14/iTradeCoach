@@ -413,3 +413,4 @@ function getFeaturesByPackage(packageId: string): string[] {
     'Customer support'
   ];
 }
+
