@@ -1,131 +1,324 @@
-// app/api/tutor/generate-video/route.ts
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
-import { tavusService } from '@/lib/tavus';
+// // app/api/tutor/generate-video/route.ts - Final working version
+// import { NextRequest, NextResponse } from 'next/server';
+// import { tavusService } from '@/lib/tavus';
+// import { createServerSupabaseClient } from '@/lib/supabase/api-server';
 
-export async function POST(request: Request) {
+// export async function POST(request: NextRequest) {
+//   try {
+//     const { question, coachId, topicHint } = await request.json();
+    
+//     const supabase = await createServerSupabaseClient();
+//     const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+//     if (userError || !user) {
+//       console.error('Auth error:', userError);
+//       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+//     }
+
+//     console.log('Generating video for user:', user.id);
+//     console.log('Question:', question);
+
+//     // Get available replicas
+//     let replicaId = '';
+//     let selectedReplica = null;
+    
+//     try {
+//       console.log('Fetching suitable replicas...');
+//       const stockReplicas = await tavusService.getStockReplicas();
+//       console.log(`Found ${stockReplicas.length} suitable replicas`);
+      
+//       if (stockReplicas.length === 0) {
+//         throw new Error('No suitable replicas available');
+//       }
+      
+//       // Select a good replica for trading content
+//       // Prefer professional-looking names for trading tutor
+//       const professionalReplicas = stockReplicas.filter(replica => {
+//         const name = replica.replica_name.toLowerCase();
+//         return name.includes('office') || 
+//                name.includes('professional') || 
+//                !name.includes('selfie') && 
+//                !name.includes('vertical') &&
+//                !name.includes('greenscreen');
+//       });
+      
+//       selectedReplica = professionalReplicas.length > 0 
+//         ? professionalReplicas[0] 
+//         : stockReplicas[0];
+        
+//       replicaId = selectedReplica.replica_id;
+//       console.log(`Selected replica: ${selectedReplica.replica_name} (${selectedReplica.model_name})`);
+      
+//     } catch (replicaError) {
+//       console.error('Error getting replicas:', replicaError);
+//       return NextResponse.json({ 
+//         error: 'Unable to access video generation service. Please try again later.',
+//         details: replicaError instanceof Error ? replicaError.message : 'Unknown error'
+//       }, { status: 503 });
+//     }
+
+//     // Generate enhanced script
+//     const script = tavusService.generateTradingScript(question, topicHint, 'beginner');
+//     console.log('Generated script length:', script.length);
+
+//     // Generate video with Tavus
+//     let videoResponse;
+//     try {
+//       console.log('Starting video generation...');
+//       videoResponse = await tavusService.generateVideo({
+//         replica_id: replicaId,
+//         script: script,
+//         video_name: `iTrader Response - ${Date.now()}`,
+//       });
+//       console.log('Video generation started:', videoResponse.video_id);
+//     } catch (videoError) {
+//       console.error('Video generation error:', videoError);
+//       return NextResponse.json({ 
+//         error: 'Failed to start video generation. Please try again.',
+//         details: videoError instanceof Error ? videoError.message : 'Unknown error'
+//       }, { status: 500 });
+//     }
+
+//     // Save video response record
+//     try {
+//       const { data: videoRecord, error: recordError } = await supabase
+//         .from('video_responses')
+//         .insert({
+//           coach_id: coachId || 'stock',
+//           student_id: user.id,
+//           tavus_video_id: videoResponse.video_id,
+//           status: 'processing',
+//         })
+//         .select()
+//         .single();
+
+//       if (recordError) {
+//         console.error('Database error:', recordError);
+//         // Continue anyway - the video will still be generated
+//       }
+
+//       return NextResponse.json({
+//         success: true,
+//         videoId: videoRecord?.id || videoResponse.video_id,
+//         tavusVideoId: videoResponse.video_id,
+//         status: 'processing',
+//         message: 'Video generation started successfully',
+//         replica: {
+//           name: selectedReplica?.replica_name,
+//           model: selectedReplica?.model_name
+//         }
+//       });
+
+//     } catch (dbError) {
+//       console.error('Database save error:', dbError);
+      
+//       // Return success anyway since video generation started
+//       return NextResponse.json({
+//         success: true,
+//         videoId: videoResponse.video_id,
+//         tavusVideoId: videoResponse.video_id,
+//         status: 'processing',
+//         message: 'Video generation started (database save had issues but video is processing)',
+//         replica: {
+//           name: selectedReplica?.replica_name,
+//           model: selectedReplica?.model_name
+//         }
+//       });
+//     }
+
+//   } catch (error: any) {
+//     console.error('Unexpected error in video generation:', error);
+//     return NextResponse.json({ 
+//       error: 'An unexpected error occurred. Please try again.',
+//       details: error.message 
+//     }, { status: 500 });
+//   }
+// }
+
+
+// app/api/tutor/generate-video/route.ts - Enhanced error logging version
+import { NextRequest, NextResponse } from 'next/server';
+import { tavusService } from '@/lib/tavus';
+import { createServerSupabaseClient } from '@/lib/supabase/api-server';
+
+export async function POST(request: NextRequest) {
   try {
     const { question, coachId, topicHint } = await request.json();
-    const supabase = createRouteHandlerClient({ cookies });
-
-    // Get authenticated user
+    
+    const supabase = await createServerSupabaseClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
     if (userError || !user) {
+      console.error('Auth error:', userError);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get coach's Tavus replica ID
-    const { data: coach, error: coachError } = await supabase
-      .from('coach_profiles')
-      .select('tavus_replica_id, tavus_replica_status')
-      .eq('coach_id', coachId)
-      .single();
+    console.log('=== VIDEO GENERATION START ===');
+    console.log('User ID:', user.id);
+    console.log('Question:', question);
+    console.log('Topic Hint:', topicHint);
 
-    if (coachError || !coach?.tavus_replica_id) {
+    // Get available replicas
+    let replicaId = '';
+    let selectedReplica = null;
+    
+    try {
+      console.log('Step 1: Fetching suitable replicas...');
+      const stockReplicas = await tavusService.getStockReplicas();
+      console.log(`Found ${stockReplicas.length} suitable replicas`);
+      
+      if (stockReplicas.length === 0) {
+        console.error('No suitable replicas available');
+        throw new Error('No suitable replicas available');
+      }
+      
+      // Select a good replica for trading content
+      const professionalReplicas = stockReplicas.filter(replica => {
+        const name = replica.replica_name.toLowerCase();
+        return name.includes('office') || 
+               name.includes('professional') || 
+               (!name.includes('selfie') && 
+                !name.includes('vertical') &&
+                !name.includes('greenscreen'));
+      });
+      
+      selectedReplica = professionalReplicas.length > 0 
+        ? professionalReplicas[0] 
+        : stockReplicas[0];
+        
+      replicaId = selectedReplica.replica_id;
+      console.log(`Selected replica: ${selectedReplica.replica_name} (${selectedReplica.model_name}) - ID: ${replicaId}`);
+      
+    } catch (replicaError) {
+      console.error('Error getting replicas:', replicaError);
       return NextResponse.json({ 
-        error: 'Coach replica not available' 
-      }, { status: 400 });
+        error: 'Unable to access video generation service. Please try again later.',
+        details: replicaError instanceof Error ? replicaError.message : 'Unknown error'
+      }, { status: 503 });
     }
 
-    if (coach.tavus_replica_status !== 'completed') {
+    // Generate enhanced script
+    let script;
+    try {
+      console.log('Step 2: Generating script...');
+      script = tavusService.generateTradingScript(question, topicHint, 'beginner');
+      console.log(`Generated script length: ${script.length} characters`);
+      console.log(`Script preview: ${script.substring(0, 150)}...`);
+    } catch (scriptError) {
+      console.error('Error generating script:', scriptError);
       return NextResponse.json({ 
-        error: 'Coach replica is still training' 
-      }, { status: 400 });
+        error: 'Failed to generate script for video',
+        details: scriptError instanceof Error ? scriptError.message : 'Unknown error'
+      }, { status: 500 });
     }
-
-    // Create enhanced script with coaching context
-    const script = generateCoachingScript(question, topicHint);
 
     // Generate video with Tavus
-    const videoResponse = await tavusService.generateVideo({
-      replica_id: coach.tavus_replica_id,
-      script: script,
-      video_name: `Trading Question Response - ${Date.now()}`,
-    });
+    let videoResponse;
+    try {
+      console.log('Step 3: Starting video generation with Tavus...');
+      
+      // Make direct API call with detailed logging
+      const requestBody = {
+        replica_id: replicaId,
+        script: script,
+        video_name: `iTrader Response - ${Date.now()}`,
+      };
+      
+      console.log('Request body:', JSON.stringify(requestBody, null, 2));
+      
+      const response = await fetch('https://tavusapi.com/v2/videos', {
+        method: 'POST',
+        headers: {
+          'x-api-key': process.env.TAVUS_API_KEY!,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
 
-    // Find or create video template
-    let templateId;
-    const { data: existingTemplate } = await supabase
-      .from('video_templates')
-      .select('id')
-      .eq('coach_id', coachId)
-      .eq('name', 'Default AI Tutor Template')
-      .single();
+      console.log('Tavus API response status:', response.status);
+      const responseText = await response.text();
+      console.log('Tavus API response body:', responseText);
 
-    if (existingTemplate) {
-      templateId = existingTemplate.id;
-    } else {
-      const { data: newTemplate, error: templateError } = await supabase
-        .from('video_templates')
-        .insert({
-          coach_id: coachId,
-          tavus_template_id: coach.tavus_replica_id,
-          name: 'Default AI Tutor Template',
-          description: 'AI-generated responses to student questions',
-          script: 'Default script for AI tutor responses'
-        })
-        .select('id')
-        .single();
+      if (!response.ok) {
+        console.error('Tavus API error:', response.status, responseText);
+        throw new Error(`Tavus API error: ${response.status} - ${responseText}`);
+      }
 
-      if (templateError) throw templateError;
-      templateId = newTemplate.id;
+      videoResponse = JSON.parse(responseText);
+      console.log('Video generation started successfully:', videoResponse.video_id);
+      
+    } catch (videoError) {
+      console.error('Video generation error details:', videoError);
+      return NextResponse.json({ 
+        error: 'Failed to start video generation. Please try again.',
+        details: videoError instanceof Error ? videoError.message : 'Unknown error',
+        debugInfo: {
+          replicaId,
+          scriptLength: script?.length,
+          apiKeyPresent: !!process.env.TAVUS_API_KEY
+        }
+      }, { status: 500 });
     }
 
     // Save video response record
-    const { data: videoRecord, error: recordError } = await supabase
-      .from('video_responses')
-      .insert({
-        template_id: templateId,
-        coach_id: coachId,
-        student_id: user.id,
-        tavus_video_id: videoResponse.video_id,
+    try {
+      console.log('Step 4: Saving to database...');
+      const { data: videoRecord, error: recordError } = await supabase
+        .from('video_responses')
+        .insert({
+          coach_id: coachId || 'stock',
+          student_id: user.id,
+          tavus_video_id: videoResponse.video_id,
+          status: 'processing',
+        })
+        .select()
+        .single();
+
+      if (recordError) {
+        console.error('Database error:', recordError);
+        // Continue anyway - the video will still be generated
+      } else {
+        console.log('Saved to database with ID:', videoRecord.id);
+      }
+
+      console.log('=== VIDEO GENERATION SUCCESS ===');
+
+      return NextResponse.json({
+        success: true,
+        videoId: videoRecord?.id || videoResponse.video_id,
+        tavusVideoId: videoResponse.video_id,
         status: 'processing',
-        question: question,
-        topic: topicHint || 'General Trading Question'
-      })
-      .select()
-      .single();
+        message: 'Video generation started successfully! It will be ready in 2-3 minutes.',
+        replica: {
+          name: selectedReplica?.replica_name,
+          model: selectedReplica?.model_name
+        }
+      });
 
-    if (recordError) throw recordError;
-
-    return NextResponse.json({
-      success: true,
-      videoId: videoRecord.id,
-      tavusVideoId: videoResponse.video_id,
-      status: 'processing'
-    });
+    } catch (dbError) {
+      console.error('Database save error:', dbError);
+      
+      // Return success anyway since video generation started
+      return NextResponse.json({
+        success: true,
+        videoId: videoResponse.video_id,
+        tavusVideoId: videoResponse.video_id,
+        status: 'processing',
+        message: 'Video generation started successfully! It will be ready in 2-3 minutes.',
+        replica: {
+          name: selectedReplica?.replica_name,
+          model: selectedReplica?.model_name
+        }
+      });
+    }
 
   } catch (error: any) {
-    console.error('Video generation error:', error);
+    console.error('=== VIDEO GENERATION FAILED ===');
+    console.error('Unexpected error:', error);
+    console.error('Stack trace:', error.stack);
     return NextResponse.json({ 
-      error: error.message || 'Failed to generate video' 
+      error: 'An unexpected error occurred. Please try again.',
+      details: error.message 
     }, { status: 500 });
   }
-}
-
-function generateCoachingScript(question: string, topicHint?: string): string {
-  const intro = "Hello! Thank you for your excellent trading question.";
-  const topicContext = topicHint ? `I see you're asking about ${topicHint}.` : '';
-  const questionAck = `Your question was: "${question}"`;
-  
-  // Generate contextual response based on common trading topics
-  let response = '';
-  const lowerQuestion = question.toLowerCase();
-  
-  if (lowerQuestion.includes('risk') || lowerQuestion.includes('loss')) {
-    response = `Risk management is absolutely crucial in trading. The key principle is never to risk more than you can afford to lose. I recommend using position sizing rules - typically no more than 1-2% of your account per trade. Always set stop losses before entering a position, and stick to them. Remember, preserving capital is more important than making profits.`;
-  } else if (lowerQuestion.includes('technical') || lowerQuestion.includes('chart') || lowerQuestion.includes('indicator')) {
-    response = `Technical analysis is a powerful tool for traders. Start with understanding support and resistance levels - these are price points where stocks historically bounce. Learn about trend lines and moving averages. The key is not to overwhelm yourself with too many indicators. Master 2-3 indicators rather than using dozens. Price action and volume are often the most reliable signals.`;
-  } else if (lowerQuestion.includes('strategy') || lowerQuestion.includes('trading plan')) {
-    response = `Having a solid trading strategy is essential for success. Your plan should include: entry and exit criteria, risk management rules, position sizing, and what markets you'll trade. Backtest your strategy on historical data first. Keep a trading journal to track what works and what doesn't. Remember, the best strategy is one you can follow consistently.`;
-  } else if (lowerQuestion.includes('psychology') || lowerQuestion.includes('emotion') || lowerQuestion.includes('discipline')) {
-    response = `Trading psychology is often the biggest challenge. Fear and greed are the enemy of good trading decisions. Develop rules and stick to them regardless of emotions. Practice meditation or mindfulness to stay calm under pressure. Never revenge trade after a loss. Take breaks when you're feeling emotional. Success in trading is more about discipline than being right all the time.`;
-  } else {
-    response = `This is a great question that many traders struggle with. The key to successful trading lies in education, practice, and discipline. Always do your own research, never risk more than you can afford to lose, and remember that trading is a marathon, not a sprint. Consider paper trading first to practice your strategies without real money at risk.`;
-  }
-  
-  const conclusion = `I hope this helps answer your question. Remember, continuous learning and practice are the keys to trading success. Keep asking great questions and stay disciplined in your approach!`;
-  
-  return `${intro} ${topicContext} ${questionAck} ${response} ${conclusion}`;
 }

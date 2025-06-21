@@ -12,7 +12,6 @@ const nextConfig = {
   experimental: {
     forceSwcTransforms: false,
   },
-  // Remove the generateStaticParams line - it's invalid here
   webpack: (config, { dev }) => {
     config.cache = false;
     
@@ -42,6 +41,12 @@ const nextConfig = {
     };
     
     config.module.strictExportPresence = false;
+    
+    // Add SVG handling
+    config.module.rules.push({
+      test: /\.svg$/,
+      use: ['@svgr/webpack'],
+    });
     
     return config;
   },

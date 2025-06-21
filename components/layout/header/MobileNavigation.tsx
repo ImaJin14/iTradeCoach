@@ -52,7 +52,7 @@ export function MobileNavigation({
     if (!user) {
       return [
         { href: "/learn", label: "Learn", icon: BookOpen },
-        { href: "/tutor", label: "AI Tutor", icon: GraduationCap },
+        { href: "/tutor", label: "iTrader", icon: GraduationCap },
         { href: "/pricing", label: "Pricing", icon: DollarSign },
       ];
     }
@@ -84,7 +84,7 @@ export function MobileNavigation({
           { href: "/coaches", label: "Find Coaches", icon: Search },
           { href: "/classroom", label: "Classroom", icon: GraduationCap },
           { href: "/learn", label: "Learn", icon: BookOpen },
-          { href: "/tutor", label: "AI Tutor", icon: GraduationCap },
+          { href: "/tutor", label: "iTrader", icon: GraduationCap },
           { href: "/pricing", label: "Pricing", icon: DollarSign },
         ];
     }
@@ -119,7 +119,7 @@ export function MobileNavigation({
       )}
 
       {/* Navigation Items */}
-      <div className="flex-1 p-6 space-y-2">
+      <div className="flex-1 p-6 space-y-2 overflow-y-auto">
         {navigationItems.map((item) => (
           <Link
             key={item.href}
@@ -145,7 +145,7 @@ export function MobileNavigation({
 
         {user ? (
           <div className="space-y-2">
-            {/* User Actions */}
+            {/* User Actions - Original vertical arrangement */}
             <Link
               href="/profile"
               onClick={handleLinkClick}
@@ -187,7 +187,7 @@ export function MobileNavigation({
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-4">
             <Link href="/sign-in" onClick={handleLinkClick} className="w-full">
               <Button variant="outline" className="w-full">
                 Sign In

@@ -1,3 +1,4 @@
+// app/tutor/page.tsx - Fixed database schema compatibility
 "use client";
 
 import { useState, useEffect } from "react";
@@ -8,13 +9,13 @@ import {
   Send, 
   Video, 
   MessageSquare, 
-  Play, 
   Loader2, 
   Clock,
   BookOpen,
   User,
   Lightbulb,
-  Star
+  Star,
+  Bot
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +23,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { TutorVideoResponse } from "@/components/tutor/TutorVideoResponse";
 import { TutorChat } from "@/components/tutor/TutorChat";
@@ -35,19 +36,12 @@ interface VideoResponse {
   status: string;
   url: string | null;
   created_at: string;
+  question: string;
+  topic?: string;
   coach: {
     name: string;
     avatar_url: string | null;
   };
-}
-
-interface Coach {
-  id: string;
-  name: string;
-  avatar_url: string | null;
-  bio: string | null;
-  expertise_areas: string[];
-  rating: number;
 }
 
 interface UserStats {
@@ -55,6 +49,7 @@ interface UserStats {
   chatInteractions: number;
   learningTimeHours: number;
   topicsCovered: number;
+  tradingExperience?: string;
 }
 
 export default function TutorPage() {
@@ -62,56 +57,66 @@ export default function TutorPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [videoResponses, setVideoResponses] = useState<VideoResponse[]>([]);
-  const [selectedCoach, setSelectedCoach] = useState<Coach | null>(null);
-  const [coaches, setCoaches] = useState<Coach[]>([]);
   const [question, setQuestion] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState('chat');
   const router = useRouter();
   const { toast } = useToast();
+  const supabase = createClient();
 
   useEffect(() => {
     async function checkAccess() {
       try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        // Check if user is logged in
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (userError || !user) {
+        if (sessionError) {
+          console.error('Session error:', sessionError);
           router.push('/sign-in');
           return;
         }
 
-        // Get user profile for role
+        if (!session?.user) {
+          console.error('No active session');
+          router.push('/sign-in');
+          return;
+        }
+
+        const user = session.user;
+        console.log('User session found:', user.id);
+
+        // Get user profile for role (only select existing columns)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .single();
 
-        if (profileError) throw profileError;
+        if (profileError) {
+          console.error('Profile error:', profileError);
+          // Continue anyway for demo purposes
+        }
 
         setCurrentUser(user);
         setUserRole(profile?.role || 'student');
 
-        // If user is a student, load their data
-        if (profile?.role === 'student') {
-          await Promise.all([
-            fetchVideoResponses(user.id),
-            fetchAvailableCoaches(),
-            fetchUserStats(user.id),
-            loadSuggestedTopics()
-          ]);
-        } else {
-          toast({
-            title: "Access Restricted",
-            description: "The AI tutor is only available for students.",
-            variant: "destructive",
-          });
-          router.push('/dashboard');
-        }
+        // Load user data
+        await Promise.all([
+          fetchVideoResponses(user.id),
+          fetchUserStats(user.id),
+          loadSuggestedTopics()
+        ]);
+
       } catch (error: any) {
         console.error('Error checking access:', error);
-        router.push('/dashboard');
+        toast({
+          title: "Authentication Error",
+          description: "Please sign in to access iTrader.",
+          variant: "destructive",
+        });
+        router.push('/sign-in');
       } finally {
         setLoading(false);
       }
@@ -132,16 +137,7 @@ export default function TutorPage() {
           url,
           created_at,
           tavus_video_id,
-          coach_profiles!video_responses_coach_id_fkey (
-            coach_id,
-            user_profiles!coach_profiles_coach_id_fkey (
-              prof_id,
-              avatar_url,
-              profiles (
-                name
-              )
-            )
-          )
+          template_id
         `)
         .eq('student_id', studentId)
         .order('created_at', { ascending: false });
@@ -152,80 +148,26 @@ export default function TutorPage() {
         return;
       }
 
-      // Transform the data to match our interface
-      const transformedData = data?.map(item => ({
+      // Transform the data (add question and topic from response if stored in localStorage or default)
+      const transformedData: VideoResponse[] = (data || []).map((item: any) => ({
         id: item.id,
         coach_id: item.coach_id,
         student_id: item.student_id,
         status: item.status,
         url: item.url,
         created_at: item.created_at,
+        question: 'Trading Question', // Default since column doesn't exist yet
+        topic: undefined,
         coach: {
-          name: item.coach_profiles?.user_profiles?.profiles?.name || 'AI Tutor',
-          avatar_url: item.coach_profiles?.user_profiles?.avatar_url || null
+          name: 'iTrader',
+          avatar_url: null
         }
-      })) || [];
+      }));
 
       setVideoResponses(transformedData);
     } catch (error: any) {
       console.error('Error fetching video responses:', error);
       setVideoResponses([]);
-      toast({
-        title: "Error",
-        description: "Failed to load your video responses. Please try again.",
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function fetchAvailableCoaches() {
-    try {
-      const { data, error } = await supabase
-        .from('coach_profiles')
-        .select(`
-          coach_id,
-          expertise_areas,
-          hourly_rate,
-          rating,
-          verification_status,
-          user_profiles!coach_profiles_coach_id_fkey (
-            prof_id,
-            avatar_url,
-            bio,
-            profiles (
-              name
-            )
-          )
-        `)
-        .eq('verification_status', 'verified')
-        .order('rating', { ascending: false });
-
-      if (error) throw error;
-
-      // Transform the data
-      const transformedCoaches = data?.map(coach => ({
-        id: coach.coach_id,
-        name: coach.user_profiles?.profiles?.name || 'Unknown Coach',
-        avatar_url: coach.user_profiles?.avatar_url || null,
-        bio: coach.user_profiles?.bio || null,
-        expertise_areas: coach.expertise_areas || [],
-        rating: coach.rating || 0
-      })) || [];
-
-      setCoaches(transformedCoaches);
-      
-      // Set default selected coach (first one)
-      if (transformedCoaches.length > 0) {
-        setSelectedCoach(transformedCoaches[0]);
-      }
-    } catch (error: any) {
-      console.error('Error fetching coaches:', error);
-      setCoaches([]);
-      toast({
-        title: "Error",
-        description: "Failed to load available coaches. Please try again.",
-        variant: "destructive",
-      });
     }
   }
 
@@ -241,29 +183,28 @@ export default function TutorPage() {
         console.error('Error fetching video count:', videoError);
       }
 
-      // Set default stats since advanced tables don't exist yet
       const stats: UserStats = {
         videoResponsesCount: videoCount || 0,
-        chatInteractions: 0, // Will be 0 until chat_messages table is created
-        learningTimeHours: 0, // Will be 0 until learning_progress table is created
-        topicsCovered: 0 // Will be 0 until learning system is implemented
+        chatInteractions: 0,
+        learningTimeHours: 0,
+        topicsCovered: 0,
+        tradingExperience: 'beginner' // Default value
       };
 
       setUserStats(stats);
     } catch (error: any) {
       console.error('Error fetching user stats:', error);
-      // Set default stats if fetch fails
       setUserStats({
         videoResponsesCount: 0,
         chatInteractions: 0,
         learningTimeHours: 0,
-        topicsCovered: 0
+        topicsCovered: 0,
+        tradingExperience: 'beginner'
       });
     }
   }
 
   async function loadSuggestedTopics() {
-    // Use static topics since learning_topics table doesn't exist yet
     setSuggestedTopics([
       "Risk Management",
       "Technical Analysis",
@@ -275,98 +216,148 @@ export default function TutorPage() {
     ]);
   }
 
-// Updated handleSubmitQuestion function in page.tsx
-async function handleSubmitQuestion() {
-  if (!question.trim() || !currentUser || !selectedCoach) return;
-
-  setSubmitting(true);
-  try {
-    const response = await fetch('/api/tutor/generate-video', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        question: question.trim(),
-        coachId: selectedCoach.id,
-        topicHint: question.toLowerCase().includes('risk') ? 'Risk Management' :
-                   question.toLowerCase().includes('technical') ? 'Technical Analysis' :
-                   question.toLowerCase().includes('psychology') ? 'Trading Psychology' : undefined
-      }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || 'Failed to submit question');
-    }
-
-    toast({
-      title: "Question Submitted",
-      description: "Your AI tutor is generating a personalized video response. This usually takes 1-2 minutes.",
-    });
-
-    setQuestion("");
-    
-    // Refresh video responses to show the new processing video
-    await fetchVideoResponses(currentUser.id);
-    
-    // Poll for video completion (optional)
-    pollForVideoCompletion(result.videoId);
-    
-  } catch (error: any) {
-    console.error('Error submitting question:', error);
-    toast({
-      title: "Error",
-      description: error.message || "Failed to submit your question. Please try again.",
-      variant: "destructive",
-    });
-  } finally {
-    setSubmitting(false);
-  }
-}
-
-// Optional: Poll for video completion
-function pollForVideoCompletion(videoId: string) {
-  const pollInterval = setInterval(async () => {
+  const handleRequestVideoFromChat = async (question: string, topic?: string) => {
+    setSubmitting(true);
     try {
-      const { data, error } = await supabase
-        .from('video_responses')
-        .select('status, url')
-        .eq('id', videoId)
-        .single();
+      const response = await fetch('/api/tutor/generate-video', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: question.trim(),
+          topicHint: topic,
+          userLevel: userStats?.tradingExperience || 'beginner'
+        }),
+      });
 
-      if (error) {
-        console.error('Error polling video status:', error);
-        clearInterval(pollInterval);
-        return;
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create video response');
       }
 
-      if (data.status === 'ready' && data.url) {
-        clearInterval(pollInterval);
-        toast({
-          title: "Video Ready!",
-          description: "Your personalized video response is now available.",
-        });
-        // Refresh video responses
-        await fetchVideoResponses(currentUser.id);
-      } else if (data.status === 'failed') {
-        clearInterval(pollInterval);
-        toast({
-          title: "Video Generation Failed",
-          description: "There was an issue generating your video. Please try again.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      console.error('Error in polling:', error);
-      clearInterval(pollInterval);
+      toast({
+        title: "Video Response Started",
+        description: `iTrader is creating your personalized video response. This usually takes 2-3 minutes.`,
+      });
+      
+      await fetchVideoResponses(currentUser.id);
+      setActiveTab('video');
+      
+    } catch (error: any) {
+      console.error('Error requesting video from chat:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create video response. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
     }
-  }, 10000); // Poll every 10 seconds
+  };
 
-  // Stop polling after 5 minutes
-  setTimeout(() => clearInterval(pollInterval), 300000);
-}
+  async function handleSubmitQuestion() {
+    console.log('Submit question clicked');
+    
+    // Check session before making request
+    const { data: { session } } = await supabase.auth.getSession();
+    console.log('Current session:', !!session?.user);
+    
+    if (!session?.user) {
+      toast({
+        title: "Session Expired",
+        description: "Please refresh the page and sign in again.",
+        variant: "destructive",
+      });
+      router.push('/sign-in');
+      return;
+    }
+
+    if (!question.trim() || submitting) return;
+
+    setSubmitting(true);
+    try {
+      const response = await fetch('/api/tutor/generate-video', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: question.trim(),
+          topicHint: question.toLowerCase().includes('risk') ? 'Risk Management' :
+                     question.toLowerCase().includes('technical') ? 'Technical Analysis' :
+                     question.toLowerCase().includes('psychology') ? 'Trading Psychology' : undefined,
+          userLevel: userStats?.tradingExperience || 'beginner'
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to submit question');
+      }
+
+      toast({
+        title: "Question Submitted",
+        description: "iTrader is generating your personalized video response. This usually takes 2-3 minutes.",
+      });
+
+      setQuestion("");
+      await fetchVideoResponses(currentUser.id);
+      setActiveTab('video');
+      pollForVideoCompletion(result.videoId);
+      
+    } catch (error: any) {
+      console.error('Error submitting question:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit your question. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function pollForVideoCompletion(videoId: string) {
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('video_responses')
+          .select('status, url')
+          .eq('id', videoId)
+          .single();
+
+        if (error) {
+          console.error('Error polling video status:', error);
+          clearInterval(pollInterval);
+          return;
+        }
+
+        if (data.status === 'ready' && data.url) {
+          clearInterval(pollInterval);
+          toast({
+            title: "Video Ready!",
+            description: "Your personalized video response is now available.",
+          });
+          await fetchVideoResponses(currentUser.id);
+        } else if (data.status === 'failed') {
+          clearInterval(pollInterval);
+          toast({
+            title: "Video Generation Failed",
+            description: "There was an issue generating your video. Please try again.",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error('Error in polling:', error);
+        clearInterval(pollInterval);
+      }
+    }, 10000);
+
+    setTimeout(() => clearInterval(pollInterval), 300000);
+  }
 
   if (loading) {
     return (
@@ -379,7 +370,7 @@ function pollForVideoCompletion(videoId: string) {
   }
 
   return (
-    <div className="container py-8">
+    <div className="container py-8 max-w-7xl mx-auto">
       <div className="mb-8">
         <Button
           variant="ghost"
@@ -395,24 +386,32 @@ function pollForVideoCompletion(videoId: string) {
         
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold">AI Trading Tutor</h1>
-            <p className="text-muted-foreground">Get personalized video responses to your trading questions</p>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <Bot className="h-8 w-8 text-primary" />
+              iTrader - Your AI Trading Tutor
+            </h1>
+            <p className="text-muted-foreground">Get personalized video responses and real-time trading guidance</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Main content area */}
-        <div className="md:col-span-2 space-y-6">
-          <Tabs defaultValue="video" className="w-full">
-            <TabsList className="grid grid-cols-3">
+        <div className="lg:col-span-3 space-y-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid grid-cols-3 w-full">
+              <TabsTrigger value="chat" className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                <span>Chat with iTrader</span>
+              </TabsTrigger>
               <TabsTrigger value="video" className="flex items-center gap-2">
                 <Video className="h-4 w-4" />
                 <span>Video Responses</span>
-              </TabsTrigger>
-              <TabsTrigger value="chat" className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                <span>Chat</span>
+                {videoResponses.filter(v => v.status === 'processing').length > 0 && (
+                  <Badge variant="secondary" className="ml-1">
+                    {videoResponses.filter(v => v.status === 'processing').length}
+                  </Badge>
+                )}
               </TabsTrigger>
               <TabsTrigger value="topics" className="flex items-center gap-2">
                 <BookOpen className="h-4 w-4" />
@@ -420,16 +419,21 @@ function pollForVideoCompletion(videoId: string) {
               </TabsTrigger>
             </TabsList>
             
-            <TabsContent value="video" className="space-y-4 pt-4">
-              <TutorVideoResponse videoResponses={videoResponses} />
+            <TabsContent value="chat" className="space-y-4 pt-4">
+              <TutorChat 
+                currentUser={currentUser} 
+                onRequestVideo={handleRequestVideoFromChat}
+              />
             </TabsContent>
             
-            <TabsContent value="chat" className="space-y-4 pt-4">
-              <TutorChat currentUser={currentUser} />
+            <TabsContent value="video" className="space-y-4 pt-4">
+              <TutorVideoResponse 
+                videoResponses={videoResponses}
+              />
             </TabsContent>
             
             <TabsContent value="topics" className="space-y-4 pt-4">
-              <TutorTopics />
+              <TutorTopics onRequestVideo={handleRequestVideoFromChat} />
             </TabsContent>
           </Tabs>
         </div>
@@ -441,50 +445,13 @@ function pollForVideoCompletion(videoId: string) {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Lightbulb className="h-5 w-5 text-primary" />
-                Ask Your Question
+                Ask iTrader
               </CardTitle>
               <CardDescription>
-                Get a personalized video response from your AI tutor
+                Get a personalized video response from your AI trading tutor
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {coaches.length > 0 && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Select AI Tutor</label>
-                  <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
-                    {coaches.map((coach) => (
-                      <div 
-                        key={coach.id}
-                        className={`flex items-center gap-3 p-2 rounded-md cursor-pointer transition-colors ${
-                          selectedCoach?.id === coach.id 
-                            ? 'bg-primary/10 border border-primary/20' 
-                            : 'hover:bg-muted'
-                        }`}
-                        onClick={() => setSelectedCoach(coach)}
-                      >
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage 
-                            src={coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.id}`} 
-                          />
-                          <AvatarFallback>{coach.name.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1">
-                          <div className="font-medium">{coach.name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {coach.expertise_areas.slice(0, 2).join(', ')}
-                            {coach.expertise_areas.length > 2 && '...'}
-                          </div>
-                        </div>
-                        <div className="flex items-center">
-                          <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                          <span className="text-xs ml-1">{coach.rating}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div className="space-y-2">
                 <label className="text-sm font-medium">Your Question</label>
                 <Textarea 
@@ -493,6 +460,7 @@ function pollForVideoCompletion(videoId: string) {
                   onChange={(e) => setQuestion(e.target.value)}
                   rows={4}
                   className="resize-none"
+                  disabled={submitting}
                 />
                 <p className="text-xs text-muted-foreground">
                   Be specific with your question to get the most helpful response
@@ -502,17 +470,17 @@ function pollForVideoCompletion(videoId: string) {
               <Button 
                 className="w-full" 
                 onClick={handleSubmitQuestion}
-                disabled={!question.trim() || submitting || !selectedCoach}
+                disabled={!question.trim() || submitting}
               >
                 {submitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
+                    Creating Video...
                   </>
                 ) : (
                   <>
                     <Send className="mr-2 h-4 w-4" />
-                    Submit Question
+                    Get Video Response
                   </>
                 )}
               </Button>
@@ -537,7 +505,7 @@ function pollForVideoCompletion(videoId: string) {
                   <div className="flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Chat Interactions</span>
+                      <span className="text-sm">Chat Messages</span>
                     </div>
                     <span className="font-medium">{userStats.chatInteractions}</span>
                   </div>
@@ -563,7 +531,7 @@ function pollForVideoCompletion(videoId: string) {
           {/* Quick Topics */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Suggested Topics</CardTitle>
+              <CardTitle className="text-lg">Popular Topics</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">

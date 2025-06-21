@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   if (error) {
     console.error('Auth error from Supabase:', error);
     return NextResponse.redirect(
-      new URL(`/sign-in?error=${encodeURIComponent(error)}`, siteConfig.url)
+      new URL(`/sign-in?error=${encodeURIComponent(error ?? 'unknown_error')}`, siteConfig.url)
         );
   }
 
@@ -100,7 +100,7 @@ export async function GET(request: Request) {
   // No code parameter - this shouldn't happen in normal flow
   console.error('Auth callback called without code parameter');
   return NextResponse.redirect(
-    new URL('/sign-in?error=missing_auth_code', request.url)
+      new URL(`/sign-in?error=${encodeURIComponent(error ?? 'unknown_error')}`, siteConfig.url)
   );
 }
 

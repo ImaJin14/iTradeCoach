@@ -11,7 +11,7 @@ import {
   NavigationMenuTrigger,
   navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Bot } from "lucide-react";
 
 interface StudentNavigationProps {
   user: any;
@@ -115,8 +115,9 @@ export function StudentNavigation({ user, userProfile }: StudentNavigationProps)
         
         <NavigationMenuItem>
           <NavigationMenuLink asChild>
-            <Link href="/tutor" className={customNavLinkStyle}>
-              AI Tutor
+            <Link href="/tutor" className={cn(customNavLinkStyle, "flex items-center gap-2")}>
+              <Bot className="h-4 w-4" />
+              iTrader
             </Link>
           </NavigationMenuLink>
         </NavigationMenuItem>

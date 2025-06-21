@@ -156,7 +156,7 @@ export default function Header() {
                 <span className="sr-only">Toggle menu</span>
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-80 p-0">
+            <SheetContent side="right" className="w-80 h-[85vh] p-0 top-0 rounded-bl-lg">
               <MobileNavigation 
                 user={user}
                 userProfile={userProfile}
