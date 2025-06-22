@@ -15,10 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link 
-          rel="stylesheet" 
+        <link
+          rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap"
         />
+        <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
       </head>
       <body className="font-sans">
         <ClientLayout>
