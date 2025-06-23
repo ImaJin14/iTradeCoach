@@ -62,9 +62,9 @@ export default function CoachShowcase() {
           throw error;
         }
         
-        // if (data) {
-        //   setCoaches(data);
-        // }
+        if (data) {
+          setCoaches(data);
+        }
       } catch (error) {
         console.error('Error fetching featured coaches:', error);
       } finally {

@@ -17,8 +17,9 @@ export default function TestimonialCarousel() {
       try {
         const { data, error } = await supabase
           .from('testimonials')
-          .select(`*,
-            user_profiles!author_id (
+          .select(`
+            *,
+            user_profiles (
               avatar_url
             )
           `)
