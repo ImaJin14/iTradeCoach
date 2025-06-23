@@ -27,45 +27,57 @@ export default function Header() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
-  useEffect(() => {
-    async function getUser() {
-      try {
-        const { data: { user }, error } = await supabase.auth.getUser();
-        
-        if (error || !user) {
-          await supabase.auth.signOut();
-          if (pathname === '/dashboard' || pathname === '/admin') {
-            router.push('/sign-in');
-          }
-          return;
-        }
-        
-        // Fetch user profile to get role and avatar
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-
-        if (profile) {
-          setUserProfile(profile);
-          user.user_metadata.name = profile.name;
-          user.user_metadata.role = profile.role;
-        }
-        
-        setUser(user);
-      } catch (error) {
-        console.error('Error fetching user:', error);
+ // Header.tsx - Add avatar fetching
+useEffect(() => {
+  async function getUser() {
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error || !user) {
         await supabase.auth.signOut();
         if (pathname === '/dashboard' || pathname === '/admin') {
           router.push('/sign-in');
         }
-      } finally {
-        setLoading(false);
+        return;
       }
+      
+      // Fetch user profile to get role and basic info
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        setUserProfile(profile);
+        user.user_metadata.name = profile.name;
+        user.user_metadata.role = profile.role;
+      }
+
+      // ADD THIS: Fetch avatar URL from user_profiles table
+      const { data: userProfileData } = await supabase
+        .from('user_profiles')
+        .select('avatar_url')
+        .eq('prof_id', user.id)
+        .single();
+
+      if (userProfileData?.avatar_url) {
+        setAvatarUrl(userProfileData.avatar_url);
+      }
+      
+      setUser(user);
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      await supabase.auth.signOut();
+      if (pathname === '/dashboard' || pathname === '/admin') {
+        router.push('/sign-in');
+      }
+    } finally {
+      setLoading(false);
     }
-    getUser();
-  }, [router, pathname]);
+  }
+  getUser();
+}, [router, pathname]);
 
   const handleSignOut = async () => {
     try {
