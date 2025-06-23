@@ -62,6 +62,7 @@ export default function TutorPage() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('chat');
+  const [isStartingLiveSession, setIsStartingLiveSession] = useState(false); // Add this line
   const router = useRouter();
   const { toast } = useToast();
   const supabase = createClient();
@@ -359,6 +360,45 @@ export default function TutorPage() {
     setTimeout(() => clearInterval(pollInterval), 300000);
   }
 
+    const handleStartLiveSession = async (context: any) => {
+    setIsStartingLiveSession(true);
+    try {
+      const response = await fetch('/api/tutor/start-contextual-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(context),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to start live session');
+      }
+
+      toast({
+        title: "Live Session Started!",
+        description: result.message || "Connecting you to your AI tutor...",
+      });
+
+      // Redirect to the Daily.co room URL
+      if (result.roomUrl) {
+        window.open(result.roomUrl, '_blank');
+      }
+
+    } catch (error: any) {
+      console.error('Error starting live session:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to start live session. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsStartingLiveSession(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container py-8">
@@ -436,6 +476,14 @@ export default function TutorPage() {
               <TutorTopics onRequestVideo={handleRequestVideoFromChat} />
             </TabsContent>
           </Tabs>
+
+                  <TabsContent value="video" className="space-y-4 pt-4">
+          <TutorVideoResponse
+            videoResponses={videoResponses}
+            onStartLiveSession={handleStartLiveSession} // Add this prop
+          />
+        </TabsContent>
+
         </div>
 
         {/* Sidebar */}

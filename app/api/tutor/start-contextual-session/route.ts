@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
     // Get replica ID
     let replicaId = '';
-    if (coachId && coachId !== 'stock') {
+    if (coachId && coachId !== '2cf6e6eb-5945-4ba0-9a36-81811e11d4f4') {
       const { data: coach } = await supabase
         .from('coach_profiles')
         .select('tavus_replica_id, tavus_replica_status')

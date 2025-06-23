@@ -266,7 +266,7 @@ export async function POST(request: NextRequest) {
       const { data: videoRecord, error: recordError } = await supabase
         .from('video_responses')
         .insert({
-          coach_id: coachId || 'stock',
+          coach_id: coachId || '2cf6e6eb-5945-4ba0-9a36-81811e11d4f4',
           student_id: user.id,
           tavus_video_id: videoResponse.video_id,
           status: 'processing',
