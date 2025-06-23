@@ -72,46 +72,90 @@ export default function CoachesPage() {
     fetchCoaches();
   }, []);
 
-  async function fetchCoaches() {
-    try {
-      const { data, error } = await supabase
-        .from('coach_profiles')
-        .select(`
-          coach_id,
-          expertise_areas,
-          hourly_rate,
-          rating,
-          total_students,
-          verification_status,
-          user_profiles!coach_id (
-            prof_id,
-            bio,
-            avatar_url
-          ),
-          profiles!coach_id (
-            name,
-            email
-          )
-        `)
-        .eq('verification_status', 'verified');
+ async function fetchCoaches() {
+  try {
+    // Step 1: Fetch coach_profiles data
+    const { data: coachProfilesData, error: coachProfilesError } = await supabase
+      .from('coach_profiles')
+      .select(`
+        coach_id,
+        expertise_areas,
+        hourly_rate,
+        rating,
+        total_students,
+        verification_status
+      `)
+      .eq('verification_status', 'verified');
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-      
-      // // Only set coaches if we have valid data
-      // if (data) {
-      //   setCoaches(data);
-      // }
-    } catch (error) {
-      console.error('Error fetching coaches:', error);
-      // Keep coaches as empty array on error
-      setCoaches([]);
-    } finally {
-      setLoading(false);
+    if (coachProfilesError) {
+      console.error('Supabase error fetching coach profiles:', coachProfilesError);
+      throw coachProfilesError;
     }
+
+    // Filter out null coach_ids and create array of strings
+    const coachIds = coachProfilesData?.map(coach => coach.coach_id).filter((id): id is string => id !== null) || [];
+
+    // Step 2: Fetch additional profile (name, email) and user profile (avatar, bio, etc.) data separately
+    const [profilesResult, userProfilesResult] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, name, email')
+        .in('id', coachIds),
+      supabase
+        .from('user_profiles')
+        .select('prof_id, avatar_url, bio') // Only select necessary fields
+        .in('prof_id', coachIds)
+    ]);
+
+    if (profilesResult.error) throw profilesResult.error;
+    if (userProfilesResult.error) throw userProfilesResult.error;
+
+    // Step 3: Create lookup maps for efficient merging
+    const profilesMap = profilesResult.data?.reduce((acc, profile) => {
+      acc[profile.id] = profile;
+      return acc;
+    }, {} as Record<string, any>) || {};
+
+    const userProfilesMap = userProfilesResult.data?.reduce((acc, userProfile) => {
+      acc[userProfile.prof_id] = userProfile;
+      return acc;
+    }, {} as Record<string, any>) || {};
+
+    // Step 4: Transform and combine the data
+    const transformedCoaches = coachProfilesData?.map(coachProfile => {
+      const profile = profilesMap[coachProfile.coach_id];
+      const userProfile = userProfilesMap[coachProfile.coach_id];
+      
+      return {
+        coach_id: coachProfile.coach_id,
+        expertise_areas: coachProfile.expertise_areas,
+        hourly_rate: coachProfile.hourly_rate,
+        rating: coachProfile.rating,
+        total_students: coachProfile.total_students,
+        verification_status: coachProfile.verification_status,
+        user_profiles: userProfile ? {
+          prof_id: userProfile.prof_id,
+          bio: userProfile.bio,
+          avatar_url: userProfile.avatar_url
+        } : null,
+        profiles: profile ? {
+          name: profile.name,
+          email: profile.email
+        } : null,
+      };
+    }) || [];
+
+    setCoaches(transformedCoaches);
+  } catch (error: any) {
+    console.error('Error fetching coaches:', error);
+    // Keep coaches as empty array on error
+    setCoaches([]);
+  } finally {
+    setLoading(false);
   }
+}
+
+
   
   // Filter coaches based on search and filters
   const filteredCoaches = coaches
