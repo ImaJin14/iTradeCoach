@@ -62,7 +62,7 @@ export default function TutorPage() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('chat');
-  const [isStartingLiveSession, setIsStartingLiveSession] = useState(false); // Add this line
+  const [isStartingLiveSession, setIsStartingLiveSession] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const supabase = createClient();
@@ -360,7 +360,7 @@ export default function TutorPage() {
     setTimeout(() => clearInterval(pollInterval), 300000);
   }
 
-    const handleStartLiveSession = async (context: any) => {
+  const handleStartLiveSession = async (context: any) => {
     setIsStartingLiveSession(true);
     try {
       const response = await fetch('/api/tutor/start-contextual-session', {
@@ -469,6 +469,7 @@ export default function TutorPage() {
             <TabsContent value="video" className="space-y-4 pt-4">
               <TutorVideoResponse 
                 videoResponses={videoResponses}
+                onStartLiveSession={handleStartLiveSession}
               />
             </TabsContent>
             
@@ -476,14 +477,6 @@ export default function TutorPage() {
               <TutorTopics onRequestVideo={handleRequestVideoFromChat} />
             </TabsContent>
           </Tabs>
-
-                  <TabsContent value="video" className="space-y-4 pt-4">
-          <TutorVideoResponse
-            videoResponses={videoResponses}
-            onStartLiveSession={handleStartLiveSession} // Add this prop
-          />
-        </TabsContent>
-
         </div>
 
         {/* Sidebar */}
