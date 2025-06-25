@@ -1,4 +1,4 @@
-// app/tutor/page.tsx - Fixed responsive layout and overflow issues
+// app/tutor/page.tsx - Complete updated file with Start Live button
 "use client";
 
 import { useState, useEffect } from "react";
@@ -18,7 +18,8 @@ import {
   Bot,
   PanelLeftClose,
   PanelLeft,
-  Menu
+  Menu,
+  History
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +27,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { TutorVideoResponse } from "@/components/tutor/TutorVideoResponse";
@@ -33,6 +35,7 @@ import { TutorChat } from "@/components/tutor/TutorChat";
 import { TutorTopics } from "@/components/tutor/TutorTopics";
 import { LiveSession } from "@/components/tutor/LiveSession";
 import { ChatHistorySidebar } from "@/components/tutor/ChatHistorySidebar";
+import { LiveSessionHistory } from "@/components/tutor/LiveSessionHistory";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -566,7 +569,7 @@ export default function TutorPage() {
               {/* Main Chat/Content Area */}
               <div className="lg:col-span-3 h-full overflow-hidden">
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-                  <TabsList className="grid grid-cols-3 w-full flex-shrink-0 mb-4">
+                  <TabsList className="grid grid-cols-4 w-full flex-shrink-0 mb-4">
                     <TabsTrigger value="chat" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-1 sm:px-3">
                       <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
                       <span>Chat</span>
@@ -583,6 +586,10 @@ export default function TutorPage() {
                     <TabsTrigger value="topics" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-1 sm:px-3">
                       <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
                       <span>Topics</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="history" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-1 sm:px-3">
+                      <History className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                      <span>Live History</span>
                     </TabsTrigger>
                   </TabsList>
                   
@@ -614,6 +621,14 @@ export default function TutorPage() {
                         />
                       </div>
                     </TabsContent>
+
+                    <TabsContent value="history" className="h-full m-0 overflow-auto">
+                      <div className="h-full overflow-y-auto">
+                        <LiveSessionHistory 
+                          onStartFollowUp={handleStartLiveSession}
+                        />
+                      </div>
+                    </TabsContent>
                   </div>
                 </Tabs>
               </div>
@@ -627,7 +642,7 @@ export default function TutorPage() {
                       <span className="truncate">Ask iTrader</span>
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      Get a personalized video response
+                      Get a personalized video response or start a live session
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
@@ -646,23 +661,102 @@ export default function TutorPage() {
                       </p>
                     </div>
 
-                    <Button 
-                      className="w-full text-xs h-8" 
-                      onClick={handleSubmitQuestion}
-                      disabled={!question.trim() || submitting}
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                          Creating...
-                        </>
-                      ) : (
-                        <>
-                          <Send className="mr-2 h-3 w-3" />
-                          Get Video
-                        </>
-                      )}
-                    </Button>
+                    {/* Updated button layout with both options */}
+                    <div className="space-y-2">
+                      <Button 
+                        className="w-full text-xs h-8" 
+                        onClick={handleSubmitQuestion}
+                        disabled={!question.trim() || submitting}
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            <Video className="mr-2 h-3 w-3" />
+                            Get Video Response
+                          </>
+                        )}
+                      </Button>
+                      
+                      <Button 
+                        variant="outline"
+                        className="w-full text-xs h-8" 
+                        onClick={() => {
+                          if (question.trim()) {
+                            // Start live session with the current question as context
+                            const context = {
+                              topic: question.trim(),
+                              sessionType: 'initial',
+                              topicLevel: 'general',
+                              context: `LIVE TUTORING SESSION
+
+STUDENT REQUEST: The student wants to discuss: "${question.trim()}"
+
+YOUR INSTRUCTIONS:
+1. IMMEDIATELY start discussing this topic when the session begins
+2. Be enthusiastic and engaging from the first moment  
+3. Ask about their current experience with this topic
+4. Provide practical examples and real-world applications
+5. Keep the conversation interactive and flowing
+
+CONVERSATION STARTER: "Hi! I see you want to discuss '${question.trim()}' - great topic! Let me start by asking about your current experience with this. What specific aspect would you like to focus on?"
+
+Remember: BE PROACTIVE, START IMMEDIATELY, KEEP ENGAGING!`,
+                              coachId: 'itrader'
+                            };
+                            handleStartLiveSession(context);
+                            setQuestion(""); // Clear the question after starting session
+                          } else {
+                            // Start general live session
+                            const context = {
+                              topic: 'General Trading Discussion',
+                              sessionType: 'initial',
+                              topicLevel: 'general',
+                              context: `GENERAL LIVE TUTORING SESSION
+
+STUDENT REQUEST: The student wants to have a general discussion about trading.
+
+YOUR INSTRUCTIONS:
+1. IMMEDIATELY start the conversation when the session begins
+2. Be enthusiastic and welcoming
+3. Ask about their trading goals and experience level
+4. Find out what they want to learn most about
+5. Tailor the conversation to their interests
+
+CONVERSATION STARTER: "Hi there! I'm excited to chat with you about trading. What's your current experience level, and what aspects of trading are you most interested in learning about today?"
+
+Remember: BE PROACTIVE, START IMMEDIATELY, KEEP ENGAGING!`,
+                              coachId: 'itrader'
+                            };
+                            handleStartLiveSession(context);
+                          }
+                        }}
+                        disabled={isStarting}
+                      >
+                        {isStarting ? (
+                          <>
+                            <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                            Starting...
+                          </>
+                        ) : (
+                          <>
+                            <MessageSquare className="mr-2 h-3 w-3" />
+                            Start Live Session
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    {/* Separator and info */}
+                    <div className="text-xs text-center space-y-1">
+                      <Separator />
+                      <p className="text-muted-foreground">
+                        💡 <strong>Tip:</strong> Live sessions are great for interactive learning and immediate feedback
+                      </p>
+                    </div>
                   </CardContent>
                 </Card>
 

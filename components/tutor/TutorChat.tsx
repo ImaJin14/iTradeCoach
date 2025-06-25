@@ -1,4 +1,4 @@
-// components/tutor/TutorChat.tsx - Fixed conversation creation with better error handling
+// components/tutor/TutorChat.tsx - Fixed with Popular Questions in scrollable area
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -151,12 +151,20 @@ What would you like to learn about today?`,
     } catch (error: any) {
       console.error('Error creating conversation:', error);
       
-      // Show user-friendly error message
-      toast({
-        title: "Error Creating Conversation",
-        description: "Unable to save your conversation. You can still chat, but messages won't be saved.",
-        variant: "destructive",
-      });
+      // Check if it's a permission error
+      if (error.message.includes('permission denied')) {
+        toast({
+          title: "Database Setup Required",
+          description: "Chat history tables need to be created. Please contact support or check your database setup.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error Creating Conversation",
+          description: "Unable to save your conversation. You can still chat, but messages won't be saved.",
+          variant: "destructive",
+        });
+      }
       
       throw error;
     }
@@ -373,7 +381,7 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
       </CardHeader>
       
       <CardContent className="flex-1 flex flex-col gap-4 p-4 min-h-0 overflow-hidden">
-        {/* Messages Area */}
+        {/* Messages Area - FIXED: Popular questions now inside scrollable area */}
         <div className="flex-1 overflow-y-auto space-y-4 pr-2">
           {messages.map((message) => (
             <div key={message.id}>
@@ -460,42 +468,43 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
               </div>
             </div>
           )}
+
+          {/* MOVED: Suggested Questions now inside scrollable area */}
+          {(messages.length === 1 || messageCount === 0) && (
+            <div className="space-y-4">
+              <Separator />
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-medium">Popular Trading Questions</p>
+                </div>
+                <div className="grid grid-cols-1 gap-2">
+                  {suggestedQuestions.map((question, index) => (
+                    <Button
+                      key={index}
+                      variant="outline"
+                      size="sm"
+                      className="justify-start text-left h-auto p-3"
+                      onClick={() => setNewMessage(question.text)}
+                      disabled={loading}
+                    >
+                      <span className="mr-2">{question.icon}</span>
+                      <div>
+                        <div className="font-medium">{question.text}</div>
+                        <div className="text-xs text-muted-foreground">{question.topic}</div>
+                      </div>
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <Separator />
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggested Questions for New Conversations */}
-        {(messages.length === 1 || messageCount === 0) && (
-          <div className="flex-shrink-0">
-            <Separator />
-            <div className="space-y-3 py-3">
-              <div className="flex items-center gap-2">
-                <Lightbulb className="h-4 w-4 text-primary" />
-                <p className="text-sm font-medium">Popular Trading Questions</p>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                {suggestedQuestions.map((question, index) => (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    size="sm"
-                    className="justify-start text-left h-auto p-3"
-                    onClick={() => setNewMessage(question.text)}
-                    disabled={loading}
-                  >
-                    <span className="mr-2">{question.icon}</span>
-                    <div>
-                      <div className="font-medium">{question.text}</div>
-                      <div className="text-xs text-muted-foreground">{question.topic}</div>
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <Separator />
-          </div>
-        )}
-
-        {/* Input Area */}
+        {/* Input Area - Fixed position at bottom */}
         <div className="flex gap-2 flex-shrink-0">
           <Textarea
             ref={textareaRef}
