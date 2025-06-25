@@ -1,15 +1,15 @@
-// lib/tavus-cvi.ts - New file for real-time conversations
+// lib/tavus-cvi.ts - Complete updated file with enhanced error handling
 interface CVIPersona {
   persona_id: string;
   persona_name: string;
   system_prompt: string;
-  voice_id?: string;
-  replica_id?: string;
+  default_replica_id?: string;
+  context?: string;
 }
 
 interface CVIConversation {
   conversation_id: string;
-  daily_room_url: string;
+  conversation_url: string;
   status: 'active' | 'ended';
   created_at: string;
 }
@@ -33,113 +33,86 @@ class TavusCVIService {
     }
   }
 
-  private async makeRequest(endpoint: string, options: RequestInit = {}) {
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers: {
-        'x-api-key': this.apiKey,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    });
+  async makeRequest(endpoint: string, options: RequestInit = {}) {
+    // Add timeout and better error handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Tavus CVI API error: ${response.status} - ${error}`);
-    }
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'x-api-key': this.apiKey,
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      });
 
-    return response.json();
-  }
+      clearTimeout(timeoutId);
 
-  // Create contextual AI Trading Tutor persona
-  async createContextualTradingTutorPersona(
-    replicaId: string, 
-    context?: SessionContext
-  ): Promise<CVIPersona> {
-    const basePrompt = `You are an expert AI trading tutor with years of experience in financial markets.`;
-    
-    let contextualPrompt = basePrompt;
-    
-    if (context?.sessionType === 'follow_up' && context.previousQuestion) {
-      contextualPrompt += `
-
-IMPORTANT CONTEXT: The student just watched a video response where you explained: "${context.previousQuestion}"
-${context.previousTopic ? `Topic: ${context.previousTopic}` : ''}
-
-The student is now coming to you with follow-up questions or needs clarification about this topic. 
-- Reference the previous explanation appropriately
-- Ask what specific part they'd like clarified
-- Be ready to dive deeper or explain differently
-- You can say things like "In the video I just created for you, I mentioned..." or "Let's expand on what we covered..."
-`;
-    }
-
-    contextualPrompt += `
-
-You provide personalized guidance on:
-- Technical analysis and chart patterns
-- Risk management and position sizing  
-- Trading psychology and discipline
-- Market analysis and timing
-- Options strategies and derivatives
-- Portfolio management
-
-Guidelines:
-- Speak naturally and conversationally as if tutoring face-to-face
-- Ask follow-up questions to understand the student's level and goals
-- Use visual examples when possible (you can see their screen)
-- Emphasize risk management and responsible trading
-- Be encouraging but realistic about trading challenges
-- Adapt your teaching style based on the student's reactions and engagement
-- If they show confusion, simplify and provide more examples
-- If they seem experienced, dive deeper into advanced concepts
-
-Always maintain a supportive, professional teaching demeanor while being engaging and personable.`;
-
-    return this.makeRequest('/personas', {
-      method: 'POST',
-      body: JSON.stringify({
-        persona_name: `AI Trading Tutor - ${context?.sessionType || 'general'}`,
-        replica_id: replicaId,
-        system_prompt: contextualPrompt,
-        properties: {
-          vision_enabled: true,
-          interruptions_enabled: true,
-          emotion_detection: true,
-          voice_speed: 1.0,
-          voice_emotion: 'engaging_teacher',
-          context_metadata: context
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorMessage = `Tavus CVI API error: ${response.status}`;
+        
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage += ` - ${errorJson.message || errorJson.error || errorText}`;
+          
+          // Enhanced logging for debugging
+          console.error('Tavus API Error Details:', {
+            status: response.status,
+            endpoint,
+            error: errorJson,
+            requestBody: options.body ? JSON.parse(options.body as string) : null,
+            headers: options.headers
+          });
+        } catch {
+          errorMessage += ` - ${errorText}`;
+          console.error('Tavus API Error (non-JSON):', {
+            status: response.status,
+            endpoint,
+            error: errorText,
+            requestBody: options.body,
+            headers: options.headers
+          });
         }
-      }),
-    });
-  }
 
-  async startContextualTutoringSession(
-    replicaId: string,
-    context: SessionContext,
-    studentInfo?: any
-  ): Promise<CVIConversation> {
-    // Create persona with context
-    const persona = await this.createContextualTradingTutorPersona(replicaId, context);
-
-    return this.makeRequest('/conversations', {
-      method: 'POST',
-      body: JSON.stringify({
-        persona_id: persona.persona_id,
-        conversation_name: `Trading ${context.sessionType} Session - ${new Date().toISOString()}`,
-        properties: {
-          student_context: {
-            ...studentInfo,
-            session_context: context
-          },
-          screen_sharing_enabled: true,
-          recording_enabled: false,
-          max_duration: 3600,
-          real_time_transcription: true,
-          sentiment_analysis: true
+        // Special handling for common errors
+        if (response.status === 401) {
+          throw new Error('Invalid API key or insufficient permissions for CVI features');
         }
-      }),
-    });
+        if (response.status === 403) {
+          throw new Error('CVI features not available on your current plan');
+        }
+        if (response.status === 429) {
+          throw new Error('Rate limit exceeded. Please try again later');
+        }
+        if (response.status === 400) {
+          // Enhanced 400 error handling
+          if (errorText.includes('custom_greeting') && endpoint.includes('personas')) {
+            throw new Error('Bad Request - custom_greeting is not valid for personas endpoint. Use it in conversations instead.');
+          }
+          throw new Error(`Bad Request - ${errorMessage}. Please check your request parameters.`);
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      return response.json();
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout - CVI service may be temporarily unavailable');
+      }
+      
+      if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+        throw new Error('Cannot connect to CVI service - please check your network connection');
+      }
+      
+      throw error;
+    }
   }
 
   async endSession(conversationId: string) {

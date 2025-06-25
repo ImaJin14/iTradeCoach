@@ -1,4 +1,4 @@
-// components/tutor/TutorVideoResponse.tsx - Complete fixed version
+// components/tutor/TutorVideoResponse.tsx - Complete updated file
 "use client";
 
 import { useState } from "react";
@@ -71,15 +71,12 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
     }
   };
 
-  // Determine if URL is a Tavus hosted URL or direct video URL
   const isTavusHostedUrl = (url: string | null): boolean => {
     if (!url) return false;
     return url.includes('tavus.video/') && !url.includes('.mp4') && !url.includes('.webm');
   };
 
-  // Get the best URL for video playback
   const getVideoUrl = (response: VideoResponse): string | null => {
-    // Priority: stream_url > download_url > url (if it's a direct video file)
     if (response.stream_url) return response.stream_url;
     if (response.download_url) return response.download_url;
     if (response.url && !isTavusHostedUrl(response.url)) return response.url;
@@ -154,9 +151,9 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
       previousQuestion: videoResponse.question,
       previousTopic: videoResponse.topic,
       videoWatched: true,
-      coachId: videoResponse.coach_id,
+      coachId: 'itrader',
       sessionType: 'follow_up',
-      context: `The student just watched a video response about: "${videoResponse.question}". They may need clarification or have follow-up questions about this topic.`
+      context: `The student just watched a video response from iTrader about: "${videoResponse.question}". They may need clarification or have follow-up questions about this topic.`
     };
 
     onStartLiveSession(context);
@@ -164,7 +161,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
     
     toast({
       title: "Starting Live Session",
-      description: "Connecting you with your AI tutor for follow-up questions...",
+      description: "Connecting you with iTrader for follow-up questions...",
     });
   };
 
@@ -179,7 +176,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
             <div>
               <h3 className="text-lg font-medium">No video responses yet</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Ask a question in the chat or use the question form to get your first AI tutor video response.
+                Ask iTrader a question in the chat or use the question form to get your first personalized video response.
               </p>
             </div>
           </div>
@@ -205,15 +202,15 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
                     <Avatar className="h-10 w-10">
-                      <AvatarImage 
-                        src={response.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${response.coach_id}`} 
+                      <AvatarImage
+                        src="https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1"
                       />
-                      <AvatarFallback>{response.coach.name.charAt(0)}</AvatarFallback>
+                      <AvatarFallback>IT</AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <CardTitle className="text-base">{response.coach.name}</CardTitle>
+                      <CardTitle className="text-base">iTrader</CardTitle>
                       <CardDescription className="line-clamp-2">
-                        "{response.question}"
+                        "{response.question || 'Trading Question'}"
                       </CardDescription>
                       {response.topic && (
                         <Badge variant="secondary" className="mt-1 text-xs">
@@ -235,7 +232,6 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
               </CardHeader>
               
               <CardContent className="space-y-3">
-                {/* Video Player */}
                 {response.status === 'ready' && response.url ? (
                   <div className="space-y-3">
                     <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
@@ -248,7 +244,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                                 Failed to load video
                               </p>
                               <p className="text-xs text-red-600">
-                                There was an issue loading your AI tutor video
+                                There was an issue loading your iTrader video
                               </p>
                             </div>
                             <Button 
@@ -273,7 +269,6 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                             </div>
                           )}
                           
-                          {/* Use iframe for Tavus hosted URLs, video element for direct URLs */}
                           {shouldUseIframe && response.url ? (
                             <iframe
                               className="w-full h-full"
@@ -335,7 +330,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                           <div className="text-center">
                             <Button size="lg" className="gap-2 group-hover:scale-105 transition-transform">
                               <Play className="h-5 w-5" />
-                              {isWatched ? 'Watch Again' : 'Play AI Response'}
+                              {isWatched ? 'Watch Again' : 'Play iTrader Response'}
                             </Button>
                             {isWatched && (
                               <p className="text-xs text-muted-foreground mt-2 flex items-center justify-center gap-1">
@@ -348,16 +343,15 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                       )}
                     </div>
                     
-                    {/* Follow-up Actions */}
                     {isWatched && !hasError && (
                       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
                         <div className="flex items-center gap-2 mb-2">
                           <HelpCircle className="h-4 w-4 text-blue-600" />
-                          <span className="text-sm font-medium text-blue-800">Need more help?</span>
+                          <span className="text-sm font-medium text-blue-800">Need more help from iTrader?</span>
                         </div>
                         <p className="text-xs text-blue-700 mb-3">
                           If you need clarification or have follow-up questions about this topic, 
-                          you can start a live conversation with your AI tutor.
+                          you can start a live conversation with iTrader.
                         </p>
                         <Button 
                           size="sm" 
@@ -365,7 +359,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                           onClick={() => handleAskFollowUp(response)}
                         >
                           <MessageCircle className="h-3 w-3" />
-                          Ask Follow-up Questions Live
+                          Ask iTrader Follow-up Questions Live
                           <ArrowRight className="h-3 w-3" />
                         </Button>
                       </div>
@@ -377,10 +371,10 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
                       <div>
                         <p className="text-sm font-medium text-muted-foreground">
-                          Generating your personalized AI tutor video...
+                          iTrader is generating your personalized video...
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Our AI is creating a custom response just for you (2-3 minutes)
+                          Your AI tutor is creating a custom response just for you (2-3 minutes)
                         </p>
                       </div>
                     </div>
@@ -394,7 +388,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                           Video generation failed
                         </p>
                         <p className="text-xs text-red-600">
-                          There was an issue creating your video. Please try asking your question again.
+                          There was an issue creating your video. Please try asking iTrader your question again.
                         </p>
                       </div>
                     </div>
@@ -404,7 +398,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                     <div className="text-center space-y-2">
                       <Clock className="h-8 w-8 mx-auto text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">
-                        AI video response will be available soon
+                        iTrader video response will be available soon
                       </p>
                     </div>
                   </div>
@@ -415,7 +409,6 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
         })}
       </div>
 
-      {/* Live Follow-up Dialog */}
       {showLiveDialog && (
         <LiveFollowUpDialog
           videoResponse={showLiveDialog}

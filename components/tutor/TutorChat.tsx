@@ -1,4 +1,4 @@
-// components/tutor/TutorChat.tsx - Fixed overflow version
+// components/tutor/TutorChat.tsx - Fixed conversation creation with better error handling
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Send, Bot, User, Video, Sparkles, Clock, Lightbulb, TrendingUp } from "lucide-react";
+import { Send, Bot, User, Video, Sparkles, Clock, Lightbulb, TrendingUp, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -24,25 +24,39 @@ interface ChatMessage {
 interface TutorChatProps {
   currentUser: any;
   onRequestVideo?: (question: string, topic?: string) => void;
+  conversationId?: string;
+  onConversationCreated?: (conversationId: string, title: string) => void;
+  initialMessages?: ChatMessage[];
 }
 
-export function TutorChat({ currentUser, onRequestVideo }: TutorChatProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function TutorChat({ 
+  currentUser, 
+  onRequestVideo, 
+  conversationId,
+  onConversationCreated,
+  initialMessages = []
+}: TutorChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [messageCount, setMessageCount] = useState(0);
+  const [currentConversationId, setCurrentConversationId] = useState<string | undefined>(conversationId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Enhanced welcome message with iTrader branding
-    setMessages([{
-      id: 'welcome',
-      content: `👋 **Welcome to iTrader - Your AI Trading Tutor!**
+    if (initialMessages.length > 0) {
+      setMessages(initialMessages);
+      setMessageCount(initialMessages.length);
+    } else {
+      // Reset to welcome message for new conversations
+      setMessages([{
+        id: 'welcome',
+        content: `👋 **Welcome! I'm iTrader, your personal AI trading tutor.**
 
-I'm here to help you master trading and investing with personalized guidance. I can assist you with:
+I'm here to help you master trading and investing with personalized guidance. As your dedicated AI mentor, I can assist you with:
 
 🔍 **Technical Analysis** - Chart patterns, indicators, and market timing
 📊 **Risk Management** - Position sizing, stop losses, and portfolio protection  
@@ -51,13 +65,19 @@ I'm here to help you master trading and investing with personalized guidance. I 
 💡 **Trading Strategies** - Day trading, swing trading, and investing approaches
 📋 **Options & Derivatives** - Strategies and risk assessment
 
-**Pro Tip:** For complex visual topics like chart analysis or detailed explanations, I can create a personalized video response just for you! Just ask your question, and I'll suggest when a video might be more helpful.
+**What makes me unique:** I'm your consistent AI tutor who remembers our conversations and can create personalized video responses just for you!
 
 What would you like to learn about today?`,
-      sender: 'ai',
-      timestamp: new Date().toISOString()
-    }]);
-  }, []);
+        sender: 'ai',
+        timestamp: new Date().toISOString()
+      }]);
+      setMessageCount(0);
+    }
+  }, [initialMessages]);
+
+  useEffect(() => {
+    setCurrentConversationId(conversationId);
+  }, [conversationId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -65,6 +85,81 @@ What would you like to learn about today?`,
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const saveMessageToDatabase = async (conversationId: string, content: string, sender: 'user' | 'ai', topic?: string, model?: string) => {
+    try {
+      const response = await fetch('/api/tutor/chat/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversationId,
+          content,
+          sender,
+          topic,
+          model
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Error saving message:', error);
+      }
+    } catch (error) {
+      console.error('Error saving message:', error);
+    }
+  };
+
+  const createNewConversation = async (firstMessage: string): Promise<string> => {
+    try {
+      // Generate title from first message (first 50 chars)
+      const title = firstMessage.length > 50 
+        ? firstMessage.substring(0, 47) + "..." 
+        : firstMessage;
+
+      console.log('Creating new conversation with title:', title);
+
+      const response = await fetch('/api/tutor/chat/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title,
+          firstMessage
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API Error:', errorData);
+        throw new Error(errorData.details || errorData.error || 'Failed to create conversation');
+      }
+
+      const data = await response.json();
+      const newConversationId = data.conversation.id;
+      
+      console.log('Conversation created successfully:', newConversationId);
+      
+      if (onConversationCreated) {
+        onConversationCreated(newConversationId, title);
+      }
+      
+      return newConversationId;
+    } catch (error: any) {
+      console.error('Error creating conversation:', error);
+      
+      // Show user-friendly error message
+      toast({
+        title: "Error Creating Conversation",
+        description: "Unable to save your conversation. You can still chat, but messages won't be saved.",
+        variant: "destructive",
+      });
+      
+      throw error;
+    }
   };
 
   const sendMessage = async () => {
@@ -84,12 +179,26 @@ What would you like to learn about today?`,
     setIsTyping(true);
     setMessageCount(prev => prev + 1);
 
-    // Auto-resize textarea back to original size
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
 
     try {
+      // Create conversation if this is the first message
+      let activeConversationId = currentConversationId;
+      if (!activeConversationId && messageCount === 0) {
+        try {
+          activeConversationId = await createNewConversation(currentQuestion);
+          setCurrentConversationId(activeConversationId);
+        } catch (conversationError) {
+          // Continue without saving conversation if creation fails
+          console.warn('Continuing without saving conversation');
+        }
+      } else if (activeConversationId) {
+        // Save user message to existing conversation
+        await saveMessageToDatabase(activeConversationId, userMessage.content, 'user');
+      }
+
       const response = await fetch('/api/tutor/chat', {
         method: 'POST',
         headers: {
@@ -109,8 +218,7 @@ What would you like to learn about today?`,
 
       const data = await response.json();
       
-      // Simulate realistic typing delay
-      setTimeout(() => {
+      setTimeout(async () => {
         const aiResponse: ChatMessage = {
           id: `ai-${Date.now()}`,
           content: data.response,
@@ -124,7 +232,17 @@ What would you like to learn about today?`,
         setMessages(prev => [...prev, aiResponse]);
         setIsTyping(false);
 
-        // Suggest video response for complex topics
+        // Save AI response to database if we have a conversation
+        if (activeConversationId) {
+          await saveMessageToDatabase(
+            activeConversationId, 
+            aiResponse.content, 
+            'ai', 
+            data.suggestedTopic, 
+            data.model
+          );
+        }
+
         if (data.suggestVideo && onRequestVideo) {
           setTimeout(() => {
             setMessages(prev => [...prev, {
@@ -198,7 +316,6 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setNewMessage(e.target.value);
     
-    // Auto-resize textarea
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
@@ -237,21 +354,27 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
   };
 
   return (
-    <Card className="h-[600px] flex flex-col">
+    <Card className="h-full flex flex-col overflow-hidden">
       <CardHeader className="pb-3 border-b flex-shrink-0">
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-primary" />
-          iTrader AI Tutor
+          iTrader - Your AI Trading Tutor
           <Badge variant="outline" className="ml-auto flex items-center gap-1">
             <Sparkles className="h-3 w-3" />
             GPT-4 Powered
           </Badge>
         </CardTitle>
+        {currentConversationId && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <MessageSquare className="h-3 w-3" />
+            <span>Conversation saved automatically</span>
+          </div>
+        )}
       </CardHeader>
       
-      <CardContent className="flex-1 flex flex-col gap-4 p-4 min-h-0">
-        {/* Messages - Fixed overflow */}
-        <div className="flex-1 overflow-y-auto space-y-4 pr-2 min-h-0">
+      <CardContent className="flex-1 flex flex-col gap-4 p-4 min-h-0 overflow-hidden">
+        {/* Messages Area */}
+        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
           {messages.map((message) => (
             <div key={message.id}>
               <div className={`flex gap-3 ${message.sender === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -264,9 +387,12 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
                       </AvatarFallback>
                     </>
                   ) : (
-                    <AvatarFallback className="bg-primary text-primary-foreground">
-                      <Bot className="h-4 w-4" />
-                    </AvatarFallback>
+                    <>
+                      <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1" />
+                      <AvatarFallback className="bg-primary text-primary-foreground">
+                        <Bot className="h-4 w-4" />
+                      </AvatarFallback>
+                    </>
                   )}
                 </Avatar>
                 
@@ -314,10 +440,10 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
             </div>
           ))}
           
-          {/* Typing indicator */}
           {isTyping && (
             <div className="flex gap-3">
               <Avatar className="h-8 w-8">
+                <AvatarImage src="https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1" />
                 <AvatarFallback className="bg-primary text-primary-foreground">
                   <Bot className="h-4 w-4" />
                 </AvatarFallback>
@@ -329,7 +455,7 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
                     <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                     <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                   </div>
-                  <span className="text-xs text-muted-foreground ml-2">iTrader is thinking...</span>
+                  <span className="text-xs text-muted-foreground ml-2">Thinking...</span>
                 </div>
               </div>
             </div>
@@ -337,7 +463,7 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggested Questions - Show after welcome or if no recent activity */}
+        {/* Suggested Questions for New Conversations */}
         {(messages.length === 1 || messageCount === 0) && (
           <div className="flex-shrink-0">
             <Separator />
@@ -369,7 +495,7 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
           </div>
         )}
 
-        {/* Input - Fixed positioning */}
+        {/* Input Area */}
         <div className="flex gap-2 flex-shrink-0">
           <Textarea
             ref={textareaRef}
@@ -394,7 +520,6 @@ I'm here to help you succeed in trading, so please don't hesitate to try again! 
           </Button>
         </div>
 
-        {/* Help text */}
         <div className="text-xs text-muted-foreground text-center flex items-center justify-center gap-2 flex-shrink-0">
           <Video className="h-3 w-3" />
           <span>For visual topics, ask for a personalized video response</span>

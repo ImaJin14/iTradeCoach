@@ -1,4 +1,4 @@
-// app/tutor/page.tsx - Fixed database schema compatibility
+// app/tutor/page.tsx - Fixed responsive layout and overflow issues
 "use client";
 
 import { useState, useEffect } from "react";
@@ -15,7 +15,10 @@ import {
   User,
   Lightbulb,
   Star,
-  Bot
+  Bot,
+  PanelLeftClose,
+  PanelLeft,
+  Menu
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +31,10 @@ import { useToast } from "@/hooks/use-toast";
 import { TutorVideoResponse } from "@/components/tutor/TutorVideoResponse";
 import { TutorChat } from "@/components/tutor/TutorChat";
 import { TutorTopics } from "@/components/tutor/TutorTopics";
+import { LiveSession } from "@/components/tutor/LiveSession";
+import { ChatHistorySidebar } from "@/components/tutor/ChatHistorySidebar";
+import { useLiveSession } from "@/hooks/useLiveSession";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 interface VideoResponse {
   id: string;
@@ -42,6 +49,15 @@ interface VideoResponse {
     name: string;
     avatar_url: string | null;
   };
+}
+
+interface ChatMessage {
+  id: string;
+  content: string;
+  sender: 'user' | 'ai';
+  timestamp: string;
+  model?: string;
+  topic?: string;
 }
 
 interface UserStats {
@@ -62,15 +78,20 @@ export default function TutorPage() {
   const [userStats, setUserStats] = useState<UserStats | null>(null);
   const [suggestedTopics, setSuggestedTopics] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState('chat');
-  const [isStartingLiveSession, setIsStartingLiveSession] = useState(false);
+  const [currentConversationId, setCurrentConversationId] = useState<string | undefined>();
+  const [conversationMessages, setConversationMessages] = useState<ChatMessage[]>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const supabase = createClient();
+  
+  // Use the live session hook
+  const { activeSession, isStarting, startSession, endSession, closeSession } = useLiveSession();
 
   useEffect(() => {
     async function checkAccess() {
       try {
-        // Check if user is logged in
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
@@ -88,7 +109,6 @@ export default function TutorPage() {
         const user = session.user;
         console.log('User session found:', user.id);
 
-        // Get user profile for role (only select existing columns)
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
@@ -97,13 +117,11 @@ export default function TutorPage() {
 
         if (profileError) {
           console.error('Profile error:', profileError);
-          // Continue anyway for demo purposes
         }
 
         setCurrentUser(user);
         setUserRole(profile?.role || 'student');
 
-        // Load user data
         await Promise.all([
           fetchVideoResponses(user.id),
           fetchUserStats(user.id),
@@ -125,6 +143,19 @@ export default function TutorPage() {
 
     checkAccess();
   }, [router, toast]);
+
+  // Auto-collapse sidebar on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024) { // lg breakpoint
+        setSidebarCollapsed(true);
+      }
+    };
+    
+    handleResize(); // Check on mount
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   async function fetchVideoResponses(studentId: string) {
     try {
@@ -149,7 +180,6 @@ export default function TutorPage() {
         return;
       }
 
-      // Transform the data (add question and topic from response if stored in localStorage or default)
       const transformedData: VideoResponse[] = (data || []).map((item: any) => ({
         id: item.id,
         coach_id: item.coach_id,
@@ -157,11 +187,11 @@ export default function TutorPage() {
         status: item.status,
         url: item.url,
         created_at: item.created_at,
-        question: 'Trading Question', // Default since column doesn't exist yet
+        question: 'Trading Question',
         topic: undefined,
         coach: {
           name: 'iTrader',
-          avatar_url: null
+          avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1`
         }
       }));
 
@@ -174,7 +204,6 @@ export default function TutorPage() {
 
   async function fetchUserStats(studentId: string) {
     try {
-      // Fetch video responses count
       const { count: videoCount, error: videoError } = await supabase
         .from('video_responses')
         .select('id', { count: 'exact' })
@@ -189,7 +218,7 @@ export default function TutorPage() {
         chatInteractions: 0,
         learningTimeHours: 0,
         topicsCovered: 0,
-        tradingExperience: 'beginner' // Default value
+        tradingExperience: 'beginner'
       };
 
       setUserStats(stats);
@@ -240,7 +269,7 @@ export default function TutorPage() {
 
       toast({
         title: "Video Response Started",
-        description: `iTrader is creating your personalized video response. This usually takes 2-3 minutes.`,
+        description: `Creating your personalized video response. This usually takes 2-3 minutes.`,
       });
       
       await fetchVideoResponses(currentUser.id);
@@ -259,11 +288,7 @@ export default function TutorPage() {
   };
 
   async function handleSubmitQuestion() {
-    console.log('Submit question clicked');
-    
-    // Check session before making request
     const { data: { session } } = await supabase.auth.getSession();
-    console.log('Current session:', !!session?.user);
     
     if (!session?.user) {
       toast({
@@ -301,7 +326,7 @@ export default function TutorPage() {
 
       toast({
         title: "Question Submitted",
-        description: "iTrader is generating your personalized video response. This usually takes 2-3 minutes.",
+        description: "Generating your personalized video response. This usually takes 2-3 minutes.",
       });
 
       setQuestion("");
@@ -361,31 +386,40 @@ export default function TutorPage() {
   }
 
   const handleStartLiveSession = async (context: any) => {
-    setIsStartingLiveSession(true);
     try {
-      const response = await fetch('/api/tutor/start-contextual-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(context),
-      });
+      const result = await startSession(context);
 
-      const result = await response.json();
+      if (result.errorType === 'access_required') {
+        toast({
+          title: "CVI Access Required",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to start live session');
+      if (result.errorType === 'network_error') {
+        toast({
+          title: "Connection Issue", 
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (result.errorType === 'service_unavailable') {
+        toast({
+          title: "Service Temporarily Unavailable",
+          description: result.error,
+          variant: "destructive",
+        });
+        return;
       }
 
       toast({
         title: "Live Session Started!",
         description: result.message || "Connecting you to your AI tutor...",
       });
-
-      // Redirect to the Daily.co room URL
-      if (result.roomUrl) {
-        window.open(result.roomUrl, '_blank');
-      }
 
     } catch (error: any) {
       console.error('Error starting live session:', error);
@@ -394,203 +428,331 @@ export default function TutorPage() {
         description: error.message || "Failed to start live session. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      setIsStartingLiveSession(false);
     }
+  };
+
+  const handleSelectConversation = async (conversationId: string) => {
+    try {
+      const response = await fetch(`/api/tutor/chat/conversations/${conversationId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const formattedMessages: ChatMessage[] = data.messages.map((msg: any) => ({
+          id: msg.id,
+          content: msg.content,
+          sender: msg.sender,
+          timestamp: msg.timestamp,
+          topic: msg.topic,
+          model: msg.model
+        }));
+        
+        setCurrentConversationId(conversationId);
+        setConversationMessages(formattedMessages);
+        setActiveTab('chat');
+        setMobileSidebarOpen(false); // Close mobile sidebar after selection
+      }
+    } catch (error) {
+      console.error('Error loading conversation:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load conversation. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleNewConversation = () => {
+    setCurrentConversationId(undefined);
+    setConversationMessages([]);
+    setActiveTab('chat');
+    setMobileSidebarOpen(false); // Close mobile sidebar after creating new conversation
+  };
+
+  const handleConversationCreated = (conversationId: string, title: string) => {
+    setCurrentConversationId(conversationId);
+    toast({
+      title: "New Conversation Started",
+      description: "Your chat with iTrader is now being saved.",
+    });
   };
 
   if (loading) {
     return (
-      <div className="container py-8">
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
+      <div className="h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
-  return (
-    <div className="container py-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-2 mb-4"
-          asChild
-        >
-          <Link href="/dashboard">
-            <ChevronLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Link>
+  // Mobile sidebar component
+  const MobileSidebar = () => (
+    <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="sm" className="lg:hidden">
+          <Menu className="h-4 w-4" />
         </Button>
-        
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <Bot className="h-8 w-8 text-primary" />
-              iTrader - Your AI Trading Tutor
-            </h1>
-            <p className="text-muted-foreground">Get personalized video responses and real-time trading guidance</p>
+      </SheetTrigger>
+      <SheetContent side="left" className="p-0 w-80">
+        <ChatHistorySidebar
+          currentConversationId={currentConversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewConversation={handleNewConversation}
+          isCollapsed={false}
+        />
+      </SheetContent>
+    </Sheet>
+  );
+
+  return (
+    <>
+      <div className="flex h-screen bg-background overflow-hidden">
+        {/* Desktop Sidebar */}
+        <div className={`hidden lg:block border-r transition-all duration-300 flex-shrink-0 ${sidebarCollapsed ? 'w-12' : 'w-80'}`}>
+          <ChatHistorySidebar
+            currentConversationId={currentConversationId}
+            onSelectConversation={handleSelectConversation}
+            onNewConversation={handleNewConversation}
+            isCollapsed={sidebarCollapsed}
+          />
+        </div>
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          {/* Header */}
+          <div className="border-b p-3 sm:p-4 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 sm:gap-4">
+                <MobileSidebar />
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                  className="hidden lg:flex flex-shrink-0"
+                >
+                  {sidebarCollapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 flex-shrink-0"
+                  asChild
+                >
+                  <Link href="/dashboard">
+                    <ChevronLeft className="h-4 w-4" />
+                    <span className="hidden sm:inline">Back to Dashboard</span>
+                    <span className="sm:hidden">Back</span>
+                  </Link>
+                </Button>
+              </div>
+              
+              <div className="min-w-0 flex-1 text-center px-2">
+                <h1 className="text-lg sm:text-xl font-bold flex items-center justify-center gap-2">
+                  <Bot className="h-5 w-5 sm:h-6 sm:w-6 text-primary flex-shrink-0" />
+                  <span className="truncate">iTrader</span>
+                </h1>
+                <p className="text-muted-foreground text-xs sm:text-sm hidden sm:block">
+                  Your Personal AI Trading Tutor
+                </p>
+              </div>
+              
+              <div className="w-16 sm:w-24"></div> {/* Spacer for balance */}
+            </div>
+          </div>
+
+          {/* Content Area */}
+          <div className="flex-1 overflow-hidden">
+            <div className="h-full lg:grid lg:grid-cols-4 lg:gap-6 p-3 sm:p-4">
+              {/* Main Chat/Content Area */}
+              <div className="lg:col-span-3 h-full overflow-hidden">
+                <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+                  <TabsList className="grid grid-cols-3 w-full flex-shrink-0 mb-4">
+                    <TabsTrigger value="chat" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-1 sm:px-3">
+                      <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                      <span>Chat</span>
+                    </TabsTrigger>
+                    <TabsTrigger value="video" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-1 sm:px-3">
+                      <Video className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                      <span>Videos</span>
+                      {videoResponses.filter(v => v.status === 'processing').length > 0 && (
+                        <Badge variant="secondary" className="text-xs h-4 w-4 p-0 flex items-center justify-center">
+                          {videoResponses.filter(v => v.status === 'processing').length}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="topics" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-1 sm:px-3">
+                      <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+                      <span>Topics</span>
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <div className="flex-1 overflow-hidden">
+                    <TabsContent value="chat" className="h-full m-0">
+                      <TutorChat 
+                        currentUser={currentUser} 
+                        onRequestVideo={handleRequestVideoFromChat}
+                        conversationId={currentConversationId}
+                        onConversationCreated={handleConversationCreated}
+                        initialMessages={conversationMessages}
+                      />
+                    </TabsContent>
+                    
+                    <TabsContent value="video" className="h-full m-0 overflow-auto">
+                      <div className="h-full overflow-y-auto space-y-4">
+                        <TutorVideoResponse 
+                          videoResponses={videoResponses}
+                          onStartLiveSession={handleStartLiveSession}
+                        />
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="topics" className="h-full m-0 overflow-auto">
+                      <div className="h-full overflow-y-auto">
+                        <TutorTopics 
+                          onRequestVideo={handleRequestVideoFromChat} 
+                          onStartLiveSession={handleStartLiveSession}
+                        />
+                      </div>
+                    </TabsContent>
+                  </div>
+                </Tabs>
+              </div>
+
+              {/* Sidebar Content - Hidden on mobile */}
+              <div className="hidden lg:block space-y-4 overflow-y-auto">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Lightbulb className="h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="truncate">Ask iTrader</span>
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Get a personalized video response
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Your Question</label>
+                      <Textarea 
+                        placeholder="Ask about trading strategies..."
+                        value={question}
+                        onChange={(e) => setQuestion(e.target.value)}
+                        rows={3}
+                        className="resize-none text-xs min-h-[60px]"
+                        disabled={submitting}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Be specific to get the most helpful response
+                      </p>
+                    </div>
+
+                    <Button 
+                      className="w-full text-xs h-8" 
+                      onClick={handleSubmitQuestion}
+                      disabled={!question.trim() || submitting}
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        <>
+                          <Send className="mr-2 h-3 w-3" />
+                          Get Video
+                        </>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {userStats && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Learning Stats</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Video className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            <span className="text-xs truncate">Videos</span>
+                          </div>
+                          <span className="font-medium text-xs flex-shrink-0">{userStats.videoResponsesCount}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <MessageSquare className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            <span className="text-xs truncate">Messages</span>
+                          </div>
+                          <span className="font-medium text-xs flex-shrink-0">{userStats.chatInteractions}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Clock className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            <span className="text-xs truncate">Time</span>
+                          </div>
+                          <span className="font-medium text-xs flex-shrink-0">{userStats.learningTimeHours}h</span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Popular Topics</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-1">
+                      {suggestedTopics.slice(0, 6).map((topic) => (
+                        <Badge 
+                          key={topic} 
+                          variant="outline"
+                          className="cursor-pointer hover:bg-primary/10 text-xs px-2 py-1 truncate"
+                          onClick={() => setQuestion(`Can you explain ${topic} in detail?`)}
+                        >
+                          {topic.split(' ')[0]}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Main content area */}
-        <div className="lg:col-span-3 space-y-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid grid-cols-3 w-full">
-              <TabsTrigger value="chat" className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4" />
-                <span>Chat with iTrader</span>
-              </TabsTrigger>
-              <TabsTrigger value="video" className="flex items-center gap-2">
-                <Video className="h-4 w-4" />
-                <span>Video Responses</span>
-                {videoResponses.filter(v => v.status === 'processing').length > 0 && (
-                  <Badge variant="secondary" className="ml-1">
-                    {videoResponses.filter(v => v.status === 'processing').length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="topics" className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4" />
-                <span>Learning Topics</span>
-              </TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="chat" className="space-y-4 pt-4">
-              <TutorChat 
-                currentUser={currentUser} 
-                onRequestVideo={handleRequestVideoFromChat}
-              />
-            </TabsContent>
-            
-            <TabsContent value="video" className="space-y-4 pt-4">
-              <TutorVideoResponse 
-                videoResponses={videoResponses}
-                onStartLiveSession={handleStartLiveSession}
-              />
-            </TabsContent>
-            
-            <TabsContent value="topics" className="space-y-4 pt-4">
-              <TutorTopics onRequestVideo={handleRequestVideoFromChat} />
-            </TabsContent>
-          </Tabs>
-        </div>
+      {/* Embedded Live Session */}
+      {activeSession && (
+        <LiveSession
+          roomUrl={activeSession.roomUrl}
+          sessionType={activeSession.sessionType}
+          topic={activeSession.topic}
+          onClose={closeSession}
+          onSessionEnd={endSession}
+        />
+      )}
 
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Ask a question card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Lightbulb className="h-5 w-5 text-primary" />
-                Ask iTrader
-              </CardTitle>
-              <CardDescription>
-                Get a personalized video response from your AI trading tutor
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Your Question</label>
-                <Textarea 
-                  placeholder="Ask about trading strategies, market analysis, risk management..."
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  rows={4}
-                  className="resize-none"
-                  disabled={submitting}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Be specific with your question to get the most helpful response
-                </p>
-              </div>
-
-              <Button 
-                className="w-full" 
-                onClick={handleSubmitQuestion}
-                disabled={!question.trim() || submitting}
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating Video...
-                  </>
-                ) : (
-                  <>
-                    <Send className="mr-2 h-4 w-4" />
-                    Get Video Response
-                  </>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Stats Card */}
-          {userStats && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Your Learning Stats</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <Video className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Video Responses</span>
-                    </div>
-                    <span className="font-medium">{userStats.videoResponsesCount}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Chat Messages</span>
-                    </div>
-                    <span className="font-medium">{userStats.chatInteractions}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Learning Time</span>
-                    </div>
-                    <span className="font-medium">{userStats.learningTimeHours} hrs</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <BookOpen className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Topics Covered</span>
-                    </div>
-                    <span className="font-medium">{userStats.topicsCovered}</span>
-                  </div>
+      {/* Loading overlay when starting session */}
+      {isStarting && (
+        <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <CardContent className="pt-6">
+              <div className="text-center space-y-4">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+                <div>
+                  <p className="font-medium text-sm">Starting Live Session</p>
+                  <p className="text-xs text-muted-foreground">
+                    Setting up your connection with iTrader...
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Quick Topics */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Popular Topics</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {suggestedTopics.map((topic) => (
-                  <Badge 
-                    key={topic} 
-                    variant="outline"
-                    className="cursor-pointer hover:bg-primary/10"
-                    onClick={() => setQuestion(`Can you explain ${topic} in detail?`)}
-                  >
-                    {topic}
-                  </Badge>
-                ))}
               </div>
             </CardContent>
           </Card>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }
