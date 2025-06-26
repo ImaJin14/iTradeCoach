@@ -1,4 +1,4 @@
-// app/tutor/page.tsx - Complete updated file with Start Live button
+// app/tutor/page.tsx - Complete updated file with enhanced polling
 "use client";
 
 import { useState, useEffect } from "react";
@@ -39,15 +39,21 @@ import { LiveSessionHistory } from "@/components/tutor/LiveSessionHistory";
 import { useLiveSession } from "@/hooks/useLiveSession";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
+// Update the VideoResponse interface in page.tsx
 interface VideoResponse {
   id: string;
   coach_id: string;
   student_id: string;
   status: string;
   url: string | null;
+  stream_url?: string | null;
+  download_url?: string | null;
   created_at: string;
+  updated_at?: string;
+  tavus_video_id?: string;
   question: string;
   topic?: string;
+  user_level?: string;
   coach: {
     name: string;
     avatar_url: string | null;
@@ -85,6 +91,7 @@ export default function TutorPage() {
   const [conversationMessages, setConversationMessages] = useState<ChatMessage[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [pollingIntervals, setPollingIntervals] = useState<Map<string, NodeJS.Timeout>>(new Map());
   const router = useRouter();
   const { toast } = useToast();
   const supabase = createClient();
@@ -160,82 +167,227 @@ export default function TutorPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  async function fetchVideoResponses(studentId: string) {
-    try {
-      const { data, error } = await supabase
-        .from('video_responses')
-        .select(`
-          id,
-          coach_id,
-          student_id,
-          status,
-          url,
-          created_at,
-          tavus_video_id,
-          template_id
-        `)
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false });
+  // Cleanup polling intervals on unmount
+  useEffect(() => {
+    return () => {
+      pollingIntervals.forEach(interval => clearInterval(interval));
+    };
+  }, [pollingIntervals]);
 
-      if (error) {
-        console.error('Error fetching video responses:', error);
-        setVideoResponses([]);
-        return;
-      }
-
-      const transformedData: VideoResponse[] = (data || []).map((item: any) => ({
-        id: item.id,
-        coach_id: item.coach_id,
-        student_id: item.student_id,
-        status: item.status,
-        url: item.url,
-        created_at: item.created_at,
-        question: 'Trading Question',
-        topic: undefined,
-        coach: {
-          name: 'iTrader',
-          avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1`
+  // Enhanced video polling function
+  const pollForVideoCompletion = (videoId: string) => {
+    console.log('Starting to poll for video completion:', videoId);
+    
+    // Don't start polling if already polling this video
+    if (pollingIntervals.has(videoId)) {
+      console.log('Already polling video:', videoId);
+      return;
+    }
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/tutor/video-status/${videoId}`);
+        if (response.ok) {
+          const videoData = await response.json();
+          console.log('Video poll result:', videoData);
+          
+          if (videoData.status === 'ready' && videoData.url) {
+            // Stop polling
+            clearInterval(pollInterval);
+            setPollingIntervals(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(videoId);
+              return newMap;
+            });
+            
+            toast({
+              title: "Video Ready!",
+              description: "Your personalized video response is now available.",
+            });
+            
+            // Refresh video responses
+            await fetchVideoResponses(currentUser.id);
+            
+          } else if (videoData.status === 'failed' || videoData.status === 'error') {
+            // Stop polling
+            clearInterval(pollInterval);
+            setPollingIntervals(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(videoId);
+              return newMap;
+            });
+            
+            toast({
+              title: "Video Generation Failed",
+              description: videoData.error_message || "There was an issue generating your video. Please try again.",
+              variant: "destructive",
+            });
+            
+            // Refresh video responses
+            await fetchVideoResponses(currentUser.id);
+          }
+        } else {
+          console.error('Failed to poll video status:', response.status);
         }
-      }));
+      } catch (error) {
+        console.error('Error in polling:', error);
+      }
+    }, 10000); // Poll every 10 seconds
 
-      setVideoResponses(transformedData);
-    } catch (error: any) {
+    // Store the interval
+    setPollingIntervals(prev => new Map(prev).set(videoId, pollInterval));
+
+    // Clear polling after 10 minutes (videos should be ready by then)
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      setPollingIntervals(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(videoId);
+        return newMap;
+      });
+      console.log('Stopped polling for video:', videoId);
+    }, 600000);
+  };
+
+  // Enhanced video fetching with all new fields
+  // app/tutor/page.tsx - Update the fetchVideoResponses function
+async function fetchVideoResponses(studentId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('video_responses')
+      .select(`
+        id,
+        coach_id,
+        student_id,
+        status,
+        url,
+        stream_url,
+        download_url,
+        created_at,
+        updated_at,
+        tavus_video_id,
+        question,
+        topic,
+        user_level,
+        script_used,
+        metadata
+      `)
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
       console.error('Error fetching video responses:', error);
       setVideoResponses([]);
+      return;
     }
+
+    const transformedData: VideoResponse[] = (data || []).map((item: any) => ({
+      id: item.id,
+      coach_id: item.coach_id,
+      student_id: item.student_id,
+      status: item.status,
+      url: item.url,
+      stream_url: item.stream_url,
+      download_url: item.download_url,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      tavus_video_id: item.tavus_video_id,
+      // Use actual stored question and topic instead of hardcoded values
+      question: item.question || 'Trading Question',
+      topic: item.topic,
+      user_level: item.user_level,
+      coach: {
+        name: 'iTrader',
+        avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1`
+      }
+    }));
+
+    console.log('Fetched video responses:', transformedData);
+    setVideoResponses(transformedData);
+  } catch (error: any) {
+    console.error('Error fetching video responses:', error);
+    setVideoResponses([]);
   }
+}
 
   async function fetchUserStats(studentId: string) {
-    try {
-      const { count: videoCount, error: videoError } = await supabase
-        .from('video_responses')
-        .select('id', { count: 'exact' })
-        .eq('student_id', studentId);
+  try {
+    // Get video count
+    const { count: videoCount, error: videoError } = await supabase
+      .from('video_responses')
+      .select('id', { count: 'exact' })
+      .eq('student_id', studentId);
 
-      if (videoError) {
-        console.error('Error fetching video count:', videoError);
-      }
-
-      const stats: UserStats = {
-        videoResponsesCount: videoCount || 0,
-        chatInteractions: 0,
-        learningTimeHours: 0,
-        topicsCovered: 0,
-        tradingExperience: 'beginner'
-      };
-
-      setUserStats(stats);
-    } catch (error: any) {
-      console.error('Error fetching user stats:', error);
-      setUserStats({
-        videoResponsesCount: 0,
-        chatInteractions: 0,
-        learningTimeHours: 0,
-        topicsCovered: 0,
-        tradingExperience: 'beginner'
-      });
+    if (videoError) {
+      console.error('Error fetching video count:', videoError);
     }
+
+    // Get chat message count with proper query structure
+    let chatCount = 0;
+    try {
+      // First get the user's conversations
+      const { data: conversations, error: convError } = await supabase
+        .from('chat_conversations')
+        .select('id')
+        .eq('user_id', studentId);
+
+      if (!convError && conversations && conversations.length > 0) {
+        const conversationIds = conversations.map(conv => conv.id);
+        
+        // Then count messages in those conversations
+        const { count: msgCount, error: msgError } = await supabase
+          .from('chat_messages')
+          .select('id', { count: 'exact' })
+          .in('conversation_id', conversationIds);
+
+        if (!msgError) {
+          chatCount = msgCount || 0;
+        }
+      }
+    } catch (chatError) {
+      console.error('Error fetching chat count:', chatError);
+    }
+
+    // Get topics covered count
+    let topicsCovered = 0;
+    try {
+      const { data: uniqueTopics, error: topicsError } = await supabase
+        .from('video_responses')
+        .select('topic')
+        .eq('student_id', studentId)
+        .not('topic', 'is', null);
+
+      if (!topicsError && uniqueTopics) {
+        const uniqueTopicSet = new Set(uniqueTopics.map(item => item.topic).filter(Boolean));
+        topicsCovered = uniqueTopicSet.size;
+      }
+    } catch (topicsError) {
+      console.error('Error fetching topics:', topicsError);
+    }
+
+    // Calculate learning time (rough estimate based on video count and chat interactions)
+    const estimatedLearningTime = Math.round(((videoCount || 0) * 3 + (chatCount || 0) * 0.5) / 60 * 10) / 10;
+
+    const stats: UserStats = {
+      videoResponsesCount: videoCount || 0,
+      chatInteractions: chatCount,
+      learningTimeHours: estimatedLearningTime,
+      topicsCovered: topicsCovered,
+      tradingExperience: 'beginner'
+    };
+
+    setUserStats(stats);
+  } catch (error: any) {
+    console.error('Error fetching user stats:', error);
+    setUserStats({
+      videoResponsesCount: 0,
+      chatInteractions: 0,
+      learningTimeHours: 0,
+      topicsCovered: 0,
+      tradingExperience: 'beginner'
+    });
   }
+}
 
   async function loadSuggestedTopics() {
     setSuggestedTopics([
@@ -272,11 +424,16 @@ export default function TutorPage() {
 
       toast({
         title: "Video Response Started",
-        description: `Creating your personalized video response. This usually takes 2-3 minutes.`,
+        description: result.message || `Creating your personalized video response. This usually takes 2-3 minutes.`,
       });
       
       await fetchVideoResponses(currentUser.id);
       setActiveTab('video');
+      
+      // Start polling for this specific video
+      if (result.videoId) {
+        pollForVideoCompletion(result.videoId);
+      }
       
     } catch (error: any) {
       console.error('Error requesting video from chat:', error);
@@ -290,6 +447,7 @@ export default function TutorPage() {
     }
   };
 
+  // Enhanced video request handling
   async function handleSubmitQuestion() {
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -316,7 +474,9 @@ export default function TutorPage() {
           question: question.trim(),
           topicHint: question.toLowerCase().includes('risk') ? 'Risk Management' :
                      question.toLowerCase().includes('technical') ? 'Technical Analysis' :
-                     question.toLowerCase().includes('psychology') ? 'Trading Psychology' : undefined,
+                     question.toLowerCase().includes('psychology') ? 'Trading Psychology' : 
+                     question.toLowerCase().includes('options') ? 'Options Trading' :
+                     question.toLowerCase().includes('fundamental') ? 'Fundamental Analysis' : undefined,
           userLevel: userStats?.tradingExperience || 'beginner'
         }),
       });
@@ -328,14 +488,18 @@ export default function TutorPage() {
       }
 
       toast({
-        title: "Question Submitted",
-        description: "Generating your personalized video response. This usually takes 2-3 minutes.",
+        title: "Video Request Submitted",
+        description: result.message || "Generating your personalized video response. This usually takes 2-3 minutes.",
       });
 
       setQuestion("");
       await fetchVideoResponses(currentUser.id);
       setActiveTab('video');
-      pollForVideoCompletion(result.videoId);
+      
+      // Start polling for this specific video
+      if (result.videoId) {
+        pollForVideoCompletion(result.videoId);
+      }
       
     } catch (error: any) {
       console.error('Error submitting question:', error);
@@ -347,45 +511,6 @@ export default function TutorPage() {
     } finally {
       setSubmitting(false);
     }
-  }
-
-  function pollForVideoCompletion(videoId: string) {
-    const pollInterval = setInterval(async () => {
-      try {
-        const { data, error } = await supabase
-          .from('video_responses')
-          .select('status, url')
-          .eq('id', videoId)
-          .single();
-
-        if (error) {
-          console.error('Error polling video status:', error);
-          clearInterval(pollInterval);
-          return;
-        }
-
-        if (data.status === 'ready' && data.url) {
-          clearInterval(pollInterval);
-          toast({
-            title: "Video Ready!",
-            description: "Your personalized video response is now available.",
-          });
-          await fetchVideoResponses(currentUser.id);
-        } else if (data.status === 'failed') {
-          clearInterval(pollInterval);
-          toast({
-            title: "Video Generation Failed",
-            description: "There was an issue generating your video. Please try again.",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        console.error('Error in polling:', error);
-        clearInterval(pollInterval);
-      }
-    }, 10000);
-
-    setTimeout(() => clearInterval(pollInterval), 300000);
   }
 
   const handleStartLiveSession = async (context: any) => {
@@ -481,7 +606,10 @@ export default function TutorPage() {
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+          <p className="text-muted-foreground">Loading iTrader...</p>
+        </div>
       </div>
     );
   }
@@ -577,9 +705,9 @@ export default function TutorPage() {
                     <TabsTrigger value="video" className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm px-1 sm:px-3">
                       <Video className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
                       <span>Videos</span>
-                      {videoResponses.filter(v => v.status === 'processing').length > 0 && (
+                      {videoResponses.filter(v => v.status === 'processing' || v.status === 'generating' || v.status === 'queued').length > 0 && (
                         <Badge variant="secondary" className="text-xs h-4 w-4 p-0 flex items-center justify-center">
-                          {videoResponses.filter(v => v.status === 'processing').length}
+                          {videoResponses.filter(v => v.status === 'processing' || v.status === 'generating' || v.status === 'queued').length}
                         </Badge>
                       )}
                     </TabsTrigger>
@@ -649,7 +777,7 @@ export default function TutorPage() {
                     <div className="space-y-2">
                       <label className="text-xs font-medium">Your Question</label>
                       <Textarea 
-                        placeholder="Ask about trading strategies..."
+                        placeholder="Ask about trading strategies, risk management, technical analysis..."
                         value={question}
                         onChange={(e) => setQuestion(e.target.value)}
                         rows={3}
@@ -657,7 +785,7 @@ export default function TutorPage() {
                         disabled={submitting}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Be specific to get the most helpful response
+                        Be specific to get the most helpful response from iTrader
                       </p>
                     </div>
 
@@ -671,7 +799,7 @@ export default function TutorPage() {
                         {submitting ? (
                           <>
                             <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                            Creating...
+                            Creating Video...
                           </>
                         ) : (
                           <>

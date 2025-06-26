@@ -48,22 +48,35 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// app/api/webhooks/tavus/route.ts - Update the handleVideoReady function
 async function handleVideoReady(supabase: any, data: any) {
   console.log('Video generation completed:', data);
   
+  const updateData: any = {
+    status: 'ready',
+    updated_at: new Date().toISOString()
+  };
+
+  // Store all available URLs from Tavus response
+  if (data.hosted_url) {
+    updateData.url = data.hosted_url;
+  }
+  if (data.stream_url) {
+    updateData.stream_url = data.stream_url;
+  }
+  if (data.download_url) {
+    updateData.download_url = data.download_url;
+  }
+
   const { error } = await supabase
     .from('video_responses')
-    .update({
-      status: 'ready',
-      url: data.hosted_url || data.url,
-      // processing_duration: data.processing_duration || null
-    })
+    .update(updateData)
     .eq('tavus_video_id', data.video_id);
 
   if (error) {
     console.error('Error updating video status:', error);
   } else {
-    console.log('Successfully updated video status to ready');
+    console.log('Successfully updated video status to ready with URLs:', updateData);
   }
 }
 

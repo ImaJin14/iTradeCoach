@@ -1,14 +1,15 @@
-// components/tutor/TutorVideoResponse.tsx - Complete updated file
+// components/tutor/TutorVideoResponse.tsx - Fixed version with better error handling
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   Play, Clock, CheckCircle, Loader2, MessageCircle, Video, 
-  HelpCircle, ArrowRight, Mic, Camera, AlertCircle, RefreshCw, ExternalLink 
+  HelpCircle, ArrowRight, AlertCircle, RefreshCw, ExternalLink,
+  Download
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -20,12 +21,16 @@ interface VideoResponse {
   student_id: string;
   status: string;
   url: string | null;
+  hosted_url?: string | null;
   stream_url?: string | null;
   download_url?: string | null;
   created_at: string;
   question: string;
   topic?: string;
   script_used?: string;
+  error_message?: string;
+  generation_progress?: string;
+  status_details?: string;
   coach: {
     name: string;
     avatar_url: string | null;
@@ -43,18 +48,81 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
   const [loadingVideos, setLoadingVideos] = useState<Set<string>>(new Set());
   const [videoErrors, setVideoErrors] = useState<Set<string>>(new Set());
   const [showLiveDialog, setShowLiveDialog] = useState<VideoResponse | null>(null);
+  const [pollingVideos, setPollingVideos] = useState<Set<string>>(new Set());
   const { toast } = useToast();
+
+  // Auto-poll processing videos
+  useEffect(() => {
+    const processingVideos = videoResponses.filter(v => 
+      v.status === 'queued' || v.status === 'processing' || v.status === 'generating'
+    );
+
+    processingVideos.forEach(video => {
+      if (!pollingVideos.has(video.id)) {
+        setPollingVideos(prev => new Set([...prev, video.id]));
+        pollVideoStatus(video.id);
+      }
+    });
+  }, [videoResponses]);
+
+  const pollVideoStatus = async (videoId: string) => {
+    try {
+      const response = await fetch(`/api/tutor/video-status/${videoId}`);
+      if (response.ok) {
+        const updatedVideo = await response.json();
+        
+        if (updatedVideo.status === 'ready' && updatedVideo.url) {
+          setPollingVideos(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(videoId);
+            return newSet;
+          });
+          
+          toast({
+            title: "Video Ready!",
+            description: "Your personalized video response is now available.",
+          });
+          
+          // Trigger a refresh of the video responses
+          window.location.reload();
+        } else if (updatedVideo.status === 'failed') {
+          setPollingVideos(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(videoId);
+            return newSet;
+          });
+          
+          toast({
+            title: "Video Generation Failed",
+            description: updatedVideo.error_message || "There was an issue generating your video.",
+            variant: "destructive",
+          });
+          
+          window.location.reload();
+        } else if (updatedVideo.status === 'processing' || updatedVideo.status === 'generating') {
+          // Continue polling
+          setTimeout(() => pollVideoStatus(videoId), 10000);
+        }
+      }
+    } catch (error) {
+      console.error('Error polling video status:', error);
+      setTimeout(() => pollVideoStatus(videoId), 15000); // Retry with longer delay
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'ready':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 text-green-800 border-green-200';
       case 'processing':
-        return 'bg-yellow-100 text-yellow-800';
+      case 'generating':
+      case 'queued':
+        return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'failed':
-        return 'bg-red-100 text-red-800';
+      case 'error':
+        return 'bg-red-100 text-red-800 border-red-200';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-100 text-gray-800 border-gray-200';
     }
   };
 
@@ -63,27 +131,77 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
       case 'ready':
         return <CheckCircle className="h-4 w-4" />;
       case 'processing':
+      case 'generating':
+      case 'queued':
         return <Loader2 className="h-4 w-4 animate-spin" />;
       case 'failed':
+      case 'error':
         return <AlertCircle className="h-4 w-4" />;
       default:
         return <Clock className="h-4 w-4" />;
     }
   };
 
-  const isTavusHostedUrl = (url: string | null): boolean => {
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'queued':
+        return 'Queued';
+      case 'generating':
+        return 'Generating';
+      case 'processing':
+        return 'Processing';
+      case 'ready':
+        return 'Ready';
+      case 'failed':
+      case 'error':
+        return 'Failed';
+      default:
+        return status;
+    }
+  };
+
+  const isValidUrl = (url: string | null): boolean => {
     if (!url) return false;
-    return url.includes('tavus.video/') && !url.includes('.mp4') && !url.includes('.webm');
+    try {
+      new URL(url);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const isTavusHostedUrl = (url: string | null): boolean => {
+    if (!url || !isValidUrl(url)) return false;
+    // Check if it's a Tavus hosted page (not a direct video file)
+    return url.includes('videos.tavus.io') && !url.includes('.mp4') && !url.includes('.webm') && !url.includes('.m3u8');
   };
 
   const getVideoUrl = (response: VideoResponse): string | null => {
-    if (response.stream_url) return response.stream_url;
-    if (response.download_url) return response.download_url;
-    if (response.url && !isTavusHostedUrl(response.url)) return response.url;
+    // Priority order: stream_url > download_url > hosted_url (if direct) > url
+    const urls = [response.stream_url, response.download_url, response.hosted_url, response.url];
+    
+    for (const url of urls) {
+      if (url && isValidUrl(url) && !isTavusHostedUrl(url)) {
+        return url;
+      }
+    }
+    return null;
+  };
+
+  const getTavusHostedUrl = (response: VideoResponse): string | null => {
+    // Get Tavus hosted page URL for iframe
+    const urls = [response.hosted_url, response.url];
+    
+    for (const url of urls) {
+      if (url && isValidUrl(url) && isTavusHostedUrl(url)) {
+        return url;
+      }
+    }
     return null;
   };
 
   const handleVideoStart = (videoId: string) => {
+    console.log('Video started loading:', videoId);
     setLoadingVideos(prev => new Set([...prev, videoId]));
     setVideoErrors(prev => {
       const newSet = new Set(prev);
@@ -93,6 +211,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
   };
 
   const handleVideoCanPlay = (videoId: string) => {
+    console.log('Video can play:', videoId);
     setLoadingVideos(prev => {
       const newSet = new Set(prev);
       newSet.delete(videoId);
@@ -101,12 +220,18 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
   };
 
   const handleVideoEnd = (videoId: string) => {
+    console.log('Video ended:', videoId);
     setWatchedVideos(prev => new Set([...prev, videoId]));
     setPlayingVideo(null);
   };
 
-  const handleTavusVideoError = (response: VideoResponse) => {
-    console.error(`Failed to load Tavus video: ${response.url}`);
+  const handleVideoError = (response: VideoResponse, errorEvent?: any) => {
+    console.error('Video loading failed for:', response.id, {
+      videoUrl: getVideoUrl(response),
+      tavusUrl: getTavusHostedUrl(response),
+      error: errorEvent
+    });
+    
     setVideoErrors(prev => new Set([...prev, response.id]));
     setLoadingVideos(prev => {
       const newSet = new Set(prev);
@@ -115,14 +240,12 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
     });
     setPlayingVideo(null);
     
-    toast({
-      title: "Video Error",
-      description: "Unable to load the AI-generated video. Please try refreshing or contact support.",
-      variant: "destructive"
-    });
+    // Don't show toast for every video error, just log it
+    console.warn(`Video ${response.id} failed to load`);
   };
 
   const handleRetryVideo = (videoId: string) => {
+    console.log('Retrying video:', videoId);
     setVideoErrors(prev => {
       const newSet = new Set(prev);
       newSet.delete(videoId);
@@ -132,12 +255,18 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
   };
 
   const handleIframeLoad = (videoId: string) => {
+    console.log('Iframe loaded:', videoId);
     setWatchedVideos(prev => new Set([...prev, videoId]));
     setLoadingVideos(prev => {
       const newSet = new Set(prev);
       newSet.delete(videoId);
       return newSet;
     });
+  };
+
+  const handleIframeError = (response: VideoResponse) => {
+    console.error('Iframe failed to load:', response.id);
+    handleVideoError(response);
   };
 
   const handleAskFollowUp = (videoResponse: VideoResponse) => {
@@ -194,7 +323,10 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
           const hasError = videoErrors.has(response.id);
           const canStartLiveSession = response.status === 'ready' && isWatched;
           const videoUrl = getVideoUrl(response);
-          const shouldUseIframe = response.url && isTavusHostedUrl(response.url);
+          const tavusHostedUrl = getTavusHostedUrl(response);
+          const shouldUseIframe = tavusHostedUrl && !videoUrl;
+          const isProcessing = response.status === 'queued' || response.status === 'processing' || response.status === 'generating';
+          const hasValidVideo = videoUrl || tavusHostedUrl;
 
           return (
             <Card key={response.id} className={`transition-all ${isWatched ? 'border-green-200 bg-green-50/30' : ''}`}>
@@ -222,7 +354,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                   <div className="flex items-center gap-2">
                     <Badge className={getStatusColor(response.status)}>
                       {getStatusIcon(response.status)}
-                      <span className="ml-1 capitalize">{response.status}</span>
+                      <span className="ml-1">{getStatusText(response.status)}</span>
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(response.created_at), { addSuffix: true })}
@@ -232,10 +364,33 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
               </CardHeader>
               
               <CardContent className="space-y-3">
-                {response.status === 'ready' && response.url ? (
+                {response.status === 'ready' ? (
                   <div className="space-y-3">
                     <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
-                      {hasError ? (
+                      {!hasValidVideo ? (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <div className="text-center space-y-3">
+                            <AlertCircle className="h-8 w-8 mx-auto text-yellow-500" />
+                            <div>
+                              <p className="text-sm font-medium text-yellow-700">
+                                Video URL not available
+                              </p>
+                              <p className="text-xs text-yellow-600">
+                                The video may still be processing or there was an issue with the video generation.
+                              </p>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => window.location.reload()}
+                              className="gap-2"
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              Refresh
+                            </Button>
+                          </div>
+                        </div>
+                      ) : hasError ? (
                         <div className="w-full h-full flex items-center justify-center">
                           <div className="text-center space-y-3">
                             <AlertCircle className="h-8 w-8 mx-auto text-red-500" />
@@ -247,15 +402,28 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                                 There was an issue loading your iTrader video
                               </p>
                             </div>
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => handleRetryVideo(response.id)}
-                              className="gap-2"
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                              Retry
-                            </Button>
+                            <div className="flex gap-2 justify-center">
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={() => handleRetryVideo(response.id)}
+                                className="gap-2"
+                              >
+                                <RefreshCw className="h-3 w-3" />
+                                Retry
+                              </Button>
+                              {(response.hosted_url || response.url) && (
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  onClick={() => window.open(response.hosted_url || response.url!, '_blank')}
+                                  className="gap-2"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  Open Direct
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ) : playingVideo === response.id ? (
@@ -269,17 +437,19 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                             </div>
                           )}
                           
-                          {shouldUseIframe && response.url ? (
+                          {shouldUseIframe && tavusHostedUrl ? (
                             <iframe
+                              key={`iframe-${response.id}`}
                               className="w-full h-full"
-                              src={response.url}
+                              src={tavusHostedUrl}
                               frameBorder="0"
                               allow="camera; microphone; autoplay; encrypted-media; fullscreen"
                               onLoad={() => handleIframeLoad(response.id)}
-                              onError={() => handleTavusVideoError(response)}
+                              onError={() => handleIframeError(response)}
                             />
                           ) : videoUrl ? (
                             <video
+                              key={`video-${response.id}`}
                               className="w-full h-full object-cover"
                               controls
                               autoPlay
@@ -289,7 +459,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                               onCanPlay={() => handleVideoCanPlay(response.id)}
                               onEnded={() => handleVideoEnd(response.id)}
                               onPause={() => setPlayingVideo(null)}
-                              onError={() => handleTavusVideoError(response)}
+                              onError={(e) => handleVideoError(response, e)}
                             >
                               <source src={videoUrl} type="video/mp4" />
                               <source src={videoUrl} type="video/webm" />
@@ -301,23 +471,12 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                                 <AlertCircle className="h-8 w-8 mx-auto text-yellow-500" />
                                 <div>
                                   <p className="text-sm font-medium text-yellow-700">
-                                    No video URL available
+                                    No playable video URL found
                                   </p>
                                   <p className="text-xs text-yellow-600">
                                     Please check the video configuration
                                   </p>
                                 </div>
-                                {response.url && (
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline"
-                                    onClick={() => window.open(response.url!, '_blank')}
-                                    className="gap-2"
-                                  >
-                                    <ExternalLink className="h-3 w-3" />
-                                    Open in New Tab
-                                  </Button>
-                                )}
                               </div>
                             </div>
                           )}
@@ -342,6 +501,21 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                         </div>
                       )}
                     </div>
+
+                    {/* Download button for videos with download_url */}
+                    {response.download_url && isValidUrl(response.download_url) && (
+                      <div className="flex justify-center">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-2"
+                          onClick={() => window.open(response.download_url!, '_blank')}
+                        >
+                          <Download className="h-3 w-3" />
+                          Download Video
+                        </Button>
+                      </div>
+                    )}
                     
                     {isWatched && !hasError && (
                       <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
@@ -365,7 +539,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                       </div>
                     )}
                   </div>
-                ) : response.status === 'processing' ? (
+                ) : isProcessing ? (
                   <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
                     <div className="text-center space-y-2">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
@@ -374,12 +548,17 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                           iTrader is generating your personalized video...
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Your AI tutor is creating a custom response just for you (2-3 minutes)
+                          {response.generation_progress || 'Your AI tutor is creating a custom response just for you (2-3 minutes)'}
                         </p>
+                        {response.status_details && (
+                          <p className="text-xs text-blue-600 mt-1">
+                            {response.status_details}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
-                ) : response.status === 'failed' ? (
+                ) : response.status === 'failed' || response.status === 'error' ? (
                   <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
                     <div className="text-center space-y-2">
                       <AlertCircle className="h-8 w-8 mx-auto text-red-500" />
@@ -388,7 +567,7 @@ export function TutorVideoResponse({ videoResponses, onStartLiveSession }: Tutor
                           Video generation failed
                         </p>
                         <p className="text-xs text-red-600">
-                          There was an issue creating your video. Please try asking iTrader your question again.
+                          {response.error_message || 'There was an issue creating your video. Please try asking iTrader your question again.'}
                         </p>
                       </div>
                     </div>
