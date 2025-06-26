@@ -27,9 +27,19 @@ export default function ClientLayout({
         <Footer />
       </div>
       
-      {/* ElevenLabs ConvAI Widget */}
+      {/* ElevenLabs ConvAI Widget - Small Size */}
       {agentId && (
         <div 
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            width: '300px',  // Adjust as needed
+            height: '400px', // Adjust as needed
+            transform: 'scale(0.6)',
+            transformOrigin: 'bottom right',
+            zIndex: 1000
+          }}
           dangerouslySetInnerHTML={{
             __html: `
               <elevenlabs-convai agent-id="${agentId}"></elevenlabs-convai>
