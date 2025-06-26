@@ -5,10 +5,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import CoachShowcase from "@/components/home/coach-showcase";
 import TestimonialCarousel from "@/components/home/testimonial-carousel";
 import PlatformStats from "@/components/home/platform-stats";
+import { BoltBadge } from "@/components/ui/bolt-badge";
 
 export default function Home() {
   return (
     <div className="flex flex-col w-full">
+      {/* Bolt.new Badge */}
+      <BoltBadge />
+      
       <section className="relative w-full pt-20 md:pt-24 lg:pt-32 pb-16 md:pb-20 lg:pb-32 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-background -z-10" />
         <div className="container mx-auto px-4 flex flex-col items-center text-center">
