@@ -463,7 +463,7 @@ export default function CoachDashboard() {
               <div className="space-y-4">
                 {/* ✅ FIXED: Updated link to correct route */}
                 <Button asChild className="w-full group hover:scale-105 transition-all duration-200">
-                  <Link href="/schedule-session">
+                  <Link href="/sessions/schedule">
                     <CalendarDays className="h-4 w-4 mr-2 group-hover:rotate-12 transition-transform duration-200" />
                     Schedule Live Sessions
                   </Link>

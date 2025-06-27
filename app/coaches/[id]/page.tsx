@@ -1,9 +1,21 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from '@supabase/supabase-js';
 import CoachProfileContent from "@/components/CoachProfileContent";
 
 // Generate static params for all coach profiles
 export async function generateStaticParams() {
   try {
+    // Use service role key for build-time database access
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!, // This is the key change!
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
     // Fetch all verified coach IDs from your database
     const { data: coaches, error } = await supabase
       .from('profiles')
@@ -12,7 +24,7 @@ export async function generateStaticParams() {
 
     if (error) {
       console.error('Error fetching coaches for static generation:', error);
-      return [];
+      return []; // Return empty array instead of letting it crash
     }
 
     // Return array of params objects
@@ -21,7 +33,7 @@ export async function generateStaticParams() {
     })) || [];
   } catch (error) {
     console.error('Error in generateStaticParams:', error);
-    return [];
+    return []; // Return empty array instead of letting it crash
   }
 }
 
