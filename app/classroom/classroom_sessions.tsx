@@ -59,6 +59,7 @@ interface ClassroomSessionsProps {
   learningPaths: LearningPath[];
   showPathsTab?: boolean;
   showProgressTab?: boolean;
+  handleJoinSession?: (session: Session) => void; // ✅ ADDED: Join session handler
 }
 
 export default function ClassroomSessions({ 
@@ -67,7 +68,8 @@ export default function ClassroomSessions({
   userRole, 
   learningPaths,
   showPathsTab = false,
-  showProgressTab = false
+  showProgressTab = false,
+  handleJoinSession // ✅ ADDED: Destructure join session handler
 }: ClassroomSessionsProps) {
 
   const getStatusBadge = (status: string | null, progress: number, isHidden: boolean | null) => {
@@ -237,7 +239,11 @@ export default function ClassroomSessions({
                 <Badge variant={session.status === 'scheduled' ? 'default' : 'secondary'}>
                   {session.status || 'Scheduled'}
                 </Badge>
-                <Button size="sm" className="gap-2">
+                <Button 
+                  size="sm" 
+                  className="gap-2"
+                  onClick={() => handleJoinSession?.(session)} // ✅ ADDED: onClick handler
+                >
                   <Play className="h-4 w-4" />
                   Join Session
                 </Button>
