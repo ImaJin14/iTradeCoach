@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CallWindow } from "./CallWindow";
 import { 
   Video, 
   ChevronLeft,
@@ -56,11 +57,11 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
   const [session, setSession] = useState<LiveSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
-  const [dailyManager, setDailyManager] = useState<DailyManager | null>(null);
   const [isInCall, setIsInCall] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('');
-  const [hasLeftCall, setHasLeftCall] = useState(false); // ✅ NEW: Track if user left call
+  const [hasLeftCall, setHasLeftCall] = useState(false);
+  const [roomUrl, setRoomUrl] = useState<string>('');
   const router = useRouter();
   const { toast } = useToast();
 
@@ -244,7 +245,7 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
     }
 
     setJoining(true);
-    setHasLeftCall(false); // ✅ Reset the left call state
+    setHasLeftCall(false);
     
     try {
       const manager = new DailyManager({
@@ -252,45 +253,12 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
         userAvatar: currentUser.avatar_url
       });
 
-      const { roomUrl, token } = await manager.getOrCreateRoom(sessionId);
+      const { roomUrl: dailyRoomUrl, token } = await manager.getOrCreateRoom(sessionId);
       
-      await manager.joinRoom(roomUrl, {
-        token,
-        userName: currentUser.name
-      });
-
-      setDailyManager(manager);
+      // Create room URL with token
+      const fullRoomUrl = token ? `${dailyRoomUrl}?t=${token}` : dailyRoomUrl;
+      setRoomUrl(fullRoomUrl);
       setIsInCall(true);
-
-      // ✅ UPDATED: Set up event listeners
-      manager.onCallStateChanged((state) => {
-        console.log('Call state changed:', state);
-        if (state === 'left') {
-          // ✅ CHANGED: Stay on the same page instead of redirecting
-          setIsInCall(false);
-          setDailyManager(null);
-          setHasLeftCall(true); // ✅ NEW: Mark that user left the call
-          
-          toast({
-            title: "Call Ended",
-            description: "You can rejoin the live session if it's still active.",
-          });
-        }
-      });
-
-      manager.onParticipantJoined((participant) => {
-        toast({
-          title: "Participant Joined",
-          description: `${participant.user_name || 'Someone'} joined the session`,
-        });
-      });
-
-      manager.onParticipantLeft((participant) => {
-        toast({
-          title: "Participant Left",
-          description: `${participant.user_name || 'Someone'} left the session`,
-        });
-      });
 
       // Update session status
       await supabase
@@ -315,12 +283,29 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
     }
   };
 
-  // ✅ NEW: Manual leave function for explicit leave button (if needed)
-  const leaveCall = async () => {
-    if (dailyManager && sessionId) {
-      await dailyManager.leaveRoom();
-      // The onCallStateChanged will handle the rest
+  const handleCallEnd = async () => {
+    setIsInCall(false);
+    setHasLeftCall(true);
+    setRoomUrl('');
+    
+    // Update session status only if coach leaves
+    if (userRole === 'coach') {
+      await supabase
+        .from('live_sessions')
+        .update({ status: 'completed' })
+        .eq('id', sessionId);
     }
+
+    toast({
+      title: "Session Ended",
+      description: "You left the live session. You can rejoin if it's still active.",
+    });
+  };
+
+  const handleCallClose = () => {
+    setIsInCall(false);
+    setHasLeftCall(true);
+    setRoomUrl('');
   };
 
   if (loading) {
@@ -353,17 +338,20 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
 
   const sessionStatus = getSessionStatus(session.scheduled_time, session.duration);
 
-  // If in call, Daily.co UI takes over the entire screen
-  if (isInCall) {
-    return (
-      <div className="fixed inset-0 z-50 bg-black">
-        {/* Daily.co iframe will be rendered here automatically */}
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-gray-900 to-gray-800">
+      {/* Call Window Component */}
+      {isInCall && roomUrl && (
+        <CallWindow
+          roomUrl={roomUrl}
+          sessionTitle={session.title}
+          sessionType="live"
+          participantCount={session.participants.length + 1}
+          onClose={handleCallClose}
+          onSessionEnd={handleCallEnd}
+        />
+      )}
+
       <div className="container py-8">
         <Button
           variant="ghost"
@@ -378,7 +366,7 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
         </Button>
 
         <div className="max-w-6xl mx-auto">
-          {/* ✅ NEW: Show reconnection message if user left call */}
+          {/* Show reconnection message if user left call */}
           {hasLeftCall && sessionStatus.canJoin && (
             <Card className="mb-6 bg-purple-600/20 border-purple-500/30">
               <CardContent className="pt-4">
@@ -489,53 +477,55 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
                 </CardContent>
               </Card>
 
-              {/* Join Session */}
-              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
-                <CardContent className="pt-6">
-                  <div className="text-center space-y-4">
-                    {sessionStatus.canJoin ? (
-                      <Button
-                        onClick={joinVideoCall}
-                        disabled={joining}
-                        className={`w-full text-white py-6 text-lg font-semibold ${
-                          hasLeftCall 
-                            ? 'bg-purple-600 hover:bg-purple-700' 
-                            : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
-                        }`}
-                        size="lg"
-                      >
-                        {joining ? (
-                          <>
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
-                            {hasLeftCall ? 'Rejoining Session...' : 'Joining Session...'}
-                          </>
-                        ) : (
-                          <>
-                            <Video className="h-5 w-5 mr-3" />
-                            {hasLeftCall 
-                              ? 'Rejoin Live Session' 
-                              : userRole === 'coach' 
-                                ? 'Start Live Session' 
-                                : 'Join Live Session'
-                            }
-                          </>
-                        )}
-                      </Button>
-                    ) : (
-                      <Button disabled className="w-full py-6 text-lg" size="lg">
-                        {sessionStatus.message}
-                      </Button>
-                    )}
-                    
-                    <p className="text-sm text-gray-400">
-                      {hasLeftCall 
-                        ? 'Click above to rejoin the live session if it\'s still active.'
-                        : 'This session will open in full-screen mode with Daily.co\'s professional interface. All participants will join the same room automatically.'
-                      }
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Join Session - Only show if not in call */}
+              {!isInCall && (
+                <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                  <CardContent className="pt-6">
+                    <div className="text-center space-y-4">
+                      {sessionStatus.canJoin ? (
+                        <Button
+                          onClick={joinVideoCall}
+                          disabled={joining}
+                          className={`w-full text-white py-6 text-lg font-semibold ${
+                            hasLeftCall 
+                              ? 'bg-purple-600 hover:bg-purple-700' 
+                              : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
+                          }`}
+                          size="lg"
+                        >
+                          {joining ? (
+                            <>
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                              {hasLeftCall ? 'Rejoining Session...' : 'Joining Session...'}
+                            </>
+                          ) : (
+                            <>
+                              <Video className="h-5 w-5 mr-3" />
+                              {hasLeftCall 
+                                ? 'Rejoin Live Session' 
+                                : userRole === 'coach' 
+                                  ? 'Start Live Session' 
+                                  : 'Join Live Session'
+                              }
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        <Button disabled className="w-full py-6 text-lg" size="lg">
+                          {sessionStatus.message}
+                        </Button>
+                      )}
+                      
+                      <p className="text-sm text-gray-400">
+                        {hasLeftCall 
+                          ? 'Click above to rejoin the live session if it\'s still active.'
+                          : 'This session will open in a window with Daily.co\'s professional interface.'
+                        }
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Host & Participants */}
@@ -608,17 +598,16 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
               {/* Session Guidelines */}
               <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
                 <CardHeader>
-                  <CardTitle className="text-white text-sm">Live Session Guidelines</CardTitle>
+                  <CardTitle className="text-white text-sm">Live Session Features</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ul className="text-sm text-gray-300 space-y-2">
-                    <li>• Join a few minutes early to test your setup</li>
-                    <li>• Mute yourself when not speaking</li>
-                    <li>• Use the chat for questions during the session</li>
-                    <li>• Respect other participants' time</li>
-                    <li>• Take notes during the session</li>
-                    <li>• Use good lighting for better video quality</li>
-                    <li>• You can rejoin if disconnected</li>
+                    <li>• Professional group video interface</li>
+                    <li>• Minimize window to continue browsing</li>
+                    <li>• Interactive chat and screen sharing</li>
+                    <li>• Participant management for host</li>
+                    <li>• Full audio/video controls</li>
+                    <li>• Rejoin if accidentally disconnected</li>
                   </ul>
                 </CardContent>
               </Card>

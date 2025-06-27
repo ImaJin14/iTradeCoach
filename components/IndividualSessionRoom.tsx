@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { CallWindow } from "./CallWindow";
 import { 
   Video, 
   ChevronLeft,
@@ -49,11 +50,11 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
   const [session, setSession] = useState<IndividualSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
-  const [dailyManager, setDailyManager] = useState<DailyManager | null>(null);
   const [isInCall, setIsInCall] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('');
-  const [hasLeftCall, setHasLeftCall] = useState(false); // ✅ NEW: Track if user left call
+  const [hasLeftCall, setHasLeftCall] = useState(false);
+  const [roomUrl, setRoomUrl] = useState<string>('');
   const router = useRouter();
   const { toast } = useToast();
 
@@ -206,7 +207,7 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
     }
 
     setJoining(true);
-    setHasLeftCall(false); // ✅ Reset the left call state
+    setHasLeftCall(false);
     
     try {
       const manager = new DailyManager({
@@ -214,45 +215,12 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
         userAvatar: currentUser.avatar_url
       });
 
-      const { roomUrl, token } = await manager.getOrCreateRoom(sessionId);
+      const { roomUrl: dailyRoomUrl, token } = await manager.getOrCreateRoom(sessionId);
       
-      await manager.joinRoom(roomUrl, {
-        token,
-        userName: currentUser.name
-      });
-
-      setDailyManager(manager);
+      // Create room URL with token
+      const fullRoomUrl = token ? `${dailyRoomUrl}?t=${token}` : dailyRoomUrl;
+      setRoomUrl(fullRoomUrl);
       setIsInCall(true);
-
-      // ✅ UPDATED: Set up event listeners
-      manager.onCallStateChanged((state) => {
-        console.log('Call state changed:', state);
-        if (state === 'left') {
-          // ✅ CHANGED: Stay on the same page instead of redirecting
-          setIsInCall(false);
-          setDailyManager(null);
-          setHasLeftCall(true); // ✅ NEW: Mark that user left the call
-          
-          toast({
-            title: "Call Ended",
-            description: "You can rejoin the session if it's still active.",
-          });
-        }
-      });
-
-      manager.onParticipantJoined((participant) => {
-        toast({
-          title: "Participant Joined",
-          description: `${participant.user_name || 'Someone'} joined the session`,
-        });
-      });
-
-      manager.onParticipantLeft((participant) => {
-        toast({
-          title: "Participant Left",
-          description: `${participant.user_name || 'Someone'} left the session`,
-        });
-      });
 
       // Update session status
       await supabase
@@ -277,12 +245,27 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
     }
   };
 
-  // ✅ NEW: Manual leave function for explicit leave button
-  const leaveCall = async () => {
-    if (dailyManager && sessionId) {
-      await dailyManager.leaveRoom();
-      // The onCallStateChanged will handle the rest
-    }
+  const handleCallEnd = async () => {
+    setIsInCall(false);
+    setHasLeftCall(true);
+    setRoomUrl('');
+    
+    // Update session status
+    await supabase
+      .from('sessions')
+      .update({ status: 'completed' })
+      .eq('id', sessionId);
+
+    toast({
+      title: "Session Ended",
+      description: "Your 1-on-1 session has ended. You can rejoin if it's still active.",
+    });
+  };
+
+  const handleCallClose = () => {
+    setIsInCall(false);
+    setHasLeftCall(true);
+    setRoomUrl('');
   };
 
   if (loading) {
@@ -315,17 +298,20 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
 
   const sessionStatus = getSessionStatus(session.scheduled_time, session.duration);
 
-  // If in call, Daily.co UI takes over the entire screen
-  if (isInCall) {
-    return (
-      <div className="fixed inset-0 z-50 bg-black">
-        {/* Daily.co iframe will be rendered here automatically */}
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      {/* Call Window Component */}
+      {isInCall && roomUrl && (
+        <CallWindow
+          roomUrl={roomUrl}
+          sessionTitle="1-on-1 Coaching Session"
+          sessionType="individual"
+          participantCount={2}
+          onClose={handleCallClose}
+          onSessionEnd={handleCallEnd}
+        />
+      )}
+
       <div className="container py-8">
         <Button
           variant="ghost"
@@ -340,7 +326,7 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
         </Button>
 
         <div className="max-w-4xl mx-auto">
-          {/* ✅ NEW: Show reconnection message if user left call */}
+          {/* Show reconnection message if user left call */}
           {hasLeftCall && sessionStatus.canJoin && (
             <Card className="mb-6 bg-blue-600/20 border-blue-500/30">
               <CardContent className="pt-4">
@@ -427,53 +413,55 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
                 </CardContent>
               </Card>
 
-              {/* Join Session */}
-              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
-                <CardContent className="pt-6">
-                  <div className="text-center space-y-4">
-                    {sessionStatus.canJoin ? (
-                      <Button
-                        onClick={joinVideoCall}
-                        disabled={joining}
-                        className={`w-full text-white py-6 text-lg font-semibold ${
-                          hasLeftCall 
-                            ? 'bg-blue-600 hover:bg-blue-700' 
-                            : 'bg-green-600 hover:bg-green-700'
-                        }`}
-                        size="lg"
-                      >
-                        {joining ? (
-                          <>
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
-                            {hasLeftCall ? 'Rejoining Session...' : 'Joining Session...'}
-                          </>
-                        ) : (
-                          <>
-                            <Video className="h-5 w-5 mr-3" />
-                            {hasLeftCall 
-                              ? 'Rejoin Session' 
-                              : userRole === 'coach' 
-                                ? 'Start Session' 
-                                : 'Join Session'
-                            }
-                          </>
-                        )}
-                      </Button>
-                    ) : (
-                      <Button disabled className="w-full py-6 text-lg" size="lg">
-                        {sessionStatus.message}
-                      </Button>
-                    )}
-                    
-                    <p className="text-sm text-gray-400">
-                      {hasLeftCall 
-                        ? 'Click above to rejoin the session if it\'s still active.'
-                        : 'Make sure your camera and microphone are working. The session will open in full-screen mode with Daily.co\'s interface.'
-                      }
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Join Session - Only show if not in call */}
+              {!isInCall && (
+                <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                  <CardContent className="pt-6">
+                    <div className="text-center space-y-4">
+                      {sessionStatus.canJoin ? (
+                        <Button
+                          onClick={joinVideoCall}
+                          disabled={joining}
+                          className={`w-full text-white py-6 text-lg font-semibold ${
+                            hasLeftCall 
+                              ? 'bg-blue-600 hover:bg-blue-700' 
+                              : 'bg-green-600 hover:bg-green-700'
+                          }`}
+                          size="lg"
+                        >
+                          {joining ? (
+                            <>
+                              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                              {hasLeftCall ? 'Rejoining Session...' : 'Joining Session...'}
+                            </>
+                          ) : (
+                            <>
+                              <Video className="h-5 w-5 mr-3" />
+                              {hasLeftCall 
+                                ? 'Rejoin Session' 
+                                : userRole === 'coach' 
+                                  ? 'Start Session' 
+                                  : 'Join Session'
+                              }
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        <Button disabled className="w-full py-6 text-lg" size="lg">
+                          {sessionStatus.message}
+                        </Button>
+                      )}
+                      
+                      <p className="text-sm text-gray-400">
+                        {hasLeftCall 
+                          ? 'Click above to rejoin the session if it\'s still active.'
+                          : 'The session will open in a window that you can minimize or move around.'
+                        }
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             {/* Participants */}
@@ -529,16 +517,16 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
               {/* Session Tips */}
               <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
                 <CardHeader>
-                  <CardTitle className="text-white text-sm">Session Tips</CardTitle>
+                  <CardTitle className="text-white text-sm">Session Features</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <ul className="text-sm text-gray-300 space-y-2">
-                    <li>• Test your camera and microphone before joining</li>
-                    <li>• Use headphones for better audio quality</li>
-                    <li>• Ensure stable internet connection</li>
-                    <li>• Have a quiet environment</li>
-                    <li>• Keep session notes handy</li>
-                    <li>• You can rejoin if disconnected</li>
+                    <li>• Professional video interface with Daily.co</li>
+                    <li>• Minimize window to continue browsing</li>
+                    <li>• Screen sharing for chart analysis</li>
+                    <li>• Full camera and microphone controls</li>
+                    <li>• Secure, private 1-on-1 environment</li>
+                    <li>• Rejoin if accidentally disconnected</li>
                   </ul>
                 </CardContent>
               </Card>
