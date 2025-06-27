@@ -1,3 +1,4 @@
+// components/LiveSessionRoom.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -11,12 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   Video, 
-  Mic, 
-  MicOff, 
-  VideoOff, 
-  Phone, 
-  Monitor,
-  ChevronLeft
+  ChevronLeft,
+  Clock,
+  DollarSign,
+  Users,
+  Calendar,
+  BookOpen,
+  RefreshCw
 } from "lucide-react";
 import Link from "next/link";
 
@@ -30,6 +32,8 @@ interface LiveSession {
   coach_id: string;
   max_participants: number;
   current_participants: number;
+  learning_path: string;
+  price: number;
   coach: {
     id: string;
     name: string;
@@ -54,11 +58,9 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
   const [joining, setJoining] = useState(false);
   const [dailyManager, setDailyManager] = useState<DailyManager | null>(null);
   const [isInCall, setIsInCall] = useState(false);
-  const [participants, setParticipants] = useState<any[]>([]);
-  const [callState, setCallState] = useState<string>('');
-  const [isCameraOn, setIsCameraOn] = useState(false);
-  const [isMicOn, setIsMicOn] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string>('');
+  const [hasLeftCall, setHasLeftCall] = useState(false); // ✅ NEW: Track if user left call
   const router = useRouter();
   const { toast } = useToast();
 
@@ -70,11 +72,20 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
     const joinWindow = new Date(sessionStart.getTime() - 10 * 60000);
 
     if (now < joinWindow) {
-      return { canJoin: false, message: 'Session not yet available' };
+      return { canJoin: false, message: 'Session not yet available', color: 'secondary' };
     } else if (now >= joinWindow && now < sessionEnd) {
-      return { canJoin: true, message: 'Session is live' };
+      return { canJoin: true, message: 'Session is live', color: 'default' };
     } else {
-      return { canJoin: false, message: 'Session has ended' };
+      return { canJoin: false, message: 'Session has ended', color: 'destructive' };
+    }
+  };
+
+  const getLevelColor = (level: string) => {
+    switch (level) {
+      case 'beginner': return 'bg-green-600';
+      case 'intermediate': return 'bg-yellow-600';
+      case 'advanced': return 'bg-red-600';
+      default: return 'bg-gray-600';
     }
   };
 
@@ -98,7 +109,7 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('name')
+        .select('name, role')
         .eq('id', user.id)
         .single();
       
@@ -115,6 +126,7 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
         name: profile?.name || 'User',
         avatar_url: userProfile?.avatar_url
       });
+      setUserRole(profile?.role || '');
     } catch (error) {
       console.error('Error getting current user:', error);
     }
@@ -124,7 +136,6 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
     if (!sessionId) return;
 
     try {
-      // Get live session details
       const { data: sessionData, error: sessionError } = await supabase
         .from('live_sessions')
         .select('*')
@@ -133,7 +144,7 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
 
       if (sessionError) throw sessionError;
 
-      // Get coach details separately
+      // Get coach details
       const { data: coachProfile, error: coachError } = await supabase
         .from('profiles')
         .select('id, name')
@@ -142,7 +153,6 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
 
       if (coachError) throw coachError;
 
-      // Get coach avatar
       const { data: coachUserProfile } = await supabase
         .from('user_profiles')
         .select('avatar_url')
@@ -197,6 +207,8 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
         coach_id: sessionData.coach_id,
         max_participants: sessionData.max_participants || 10,
         current_participants: sessionData.current_participants || 0,
+        learning_path: sessionData.learning_path || 'beginner',
+        price: sessionData.price || 0,
         coach: {
           id: sessionData.coach_id,
           name: coachProfile?.name || 'Coach',
@@ -232,18 +244,17 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
     }
 
     setJoining(true);
+    setHasLeftCall(false); // ✅ Reset the left call state
+    
     try {
-      // Initialize Daily manager
       const manager = new DailyManager({
         userName: currentUser.name,
         userAvatar: currentUser.avatar_url
       });
 
-      // Create or get room
-      const { roomUrl, token } = await manager.createRoom(sessionId);
+      const { roomUrl, token } = await manager.getOrCreateRoom(sessionId);
       
-      // Join the call
-      const daily = await manager.joinRoom(roomUrl, {
+      await manager.joinRoom(roomUrl, {
         token,
         userName: currentUser.name
       });
@@ -251,17 +262,23 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
       setDailyManager(manager);
       setIsInCall(true);
 
-      // Set up event listeners
+      // ✅ UPDATED: Set up event listeners
       manager.onCallStateChanged((state) => {
-        setCallState(state);
+        console.log('Call state changed:', state);
         if (state === 'left') {
+          // ✅ CHANGED: Stay on the same page instead of redirecting
           setIsInCall(false);
           setDailyManager(null);
+          setHasLeftCall(true); // ✅ NEW: Mark that user left the call
+          
+          toast({
+            title: "Call Ended",
+            description: "You can rejoin the live session if it's still active.",
+          });
         }
       });
 
       manager.onParticipantJoined((participant) => {
-        setParticipants(prev => [...prev, participant]);
         toast({
           title: "Participant Joined",
           description: `${participant.user_name || 'Someone'} joined the session`,
@@ -269,10 +286,13 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
       });
 
       manager.onParticipantLeft((participant) => {
-        setParticipants(prev => prev.filter(p => p.session_id !== participant.session_id));
+        toast({
+          title: "Participant Left",
+          description: `${participant.user_name || 'Someone'} left the session`,
+        });
       });
 
-      // Update session status to active
+      // Update session status
       await supabase
         .from('live_sessions')
         .update({ status: 'active' })
@@ -280,7 +300,7 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
 
       toast({
         title: "Joined Session",
-        description: "You're now in the live session!",
+        description: `Welcome to ${session.title}!`,
       });
 
     } catch (error: any) {
@@ -295,51 +315,11 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
     }
   };
 
+  // ✅ NEW: Manual leave function for explicit leave button (if needed)
   const leaveCall = async () => {
     if (dailyManager && sessionId) {
       await dailyManager.leaveRoom();
-      setIsInCall(false);
-      setDailyManager(null);
-      
-      // Update session status if needed
-      await supabase
-        .from('live_sessions')
-        .update({ status: 'completed' })
-        .eq('id', sessionId);
-        
-      router.push('/dashboard');
-    }
-  };
-
-  const toggleCamera = async () => {
-    if (dailyManager) {
-      await dailyManager.toggleCamera();
-      setIsCameraOn(!isCameraOn);
-    }
-  };
-
-  const toggleMicrophone = async () => {
-    if (dailyManager) {
-      await dailyManager.toggleMicrophone();
-      setIsMicOn(!isMicOn);
-    }
-  };
-
-  const startScreenShare = async () => {
-    if (dailyManager) {
-      try {
-        await dailyManager.startScreenShare();
-        toast({
-          title: "Screen Share Started",
-          description: "You're now sharing your screen",
-        });
-      } catch (error) {
-        toast({
-          title: "Screen Share Failed",
-          description: "Could not start screen sharing",
-          variant: "destructive",
-        });
-      }
+      // The onCallStateChanged will handle the rest
     }
   };
 
@@ -373,160 +353,279 @@ export default function LiveSessionRoom({ sessionId }: LiveSessionRoomProps) {
 
   const sessionStatus = getSessionStatus(session.scheduled_time, session.duration);
 
-  return (
-    <div className="min-h-screen bg-gray-900">
-      {!isInCall && (
-        <div className="container py-8">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-2 mb-4 text-white hover:text-gray-300"
-            asChild
-          >
-            <Link href="/dashboard">
-              <ChevronLeft className="h-4 w-4" />
-              Back to Dashboard
-            </Link>
-          </Button>
+  // If in call, Daily.co UI takes over the entire screen
+  if (isInCall) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black">
+        {/* Daily.co iframe will be rendered here automatically */}
+      </div>
+    );
+  }
 
-          <Card className="max-w-2xl mx-auto">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Video className="h-6 w-6" />
-                {session.title}
-              </CardTitle>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span>Host: {session.coach.name}</span>
-                <span>{session.participants.length} / {session.max_participants} participants</span>
-                <span>{session.duration} minutes</span>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-gray-900 to-gray-800">
+      <div className="container py-8">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-2 mb-6 text-white hover:text-gray-300 hover:bg-white/10"
+          asChild
+        >
+          <Link href="/dashboard">
+            <ChevronLeft className="h-4 w-4" />
+            Back to Dashboard
+          </Link>
+        </Button>
+
+        <div className="max-w-6xl mx-auto">
+          {/* ✅ NEW: Show reconnection message if user left call */}
+          {hasLeftCall && sessionStatus.canJoin && (
+            <Card className="mb-6 bg-purple-600/20 border-purple-500/30">
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-3 text-purple-200">
+                  <RefreshCw className="h-5 w-5" />
+                  <div>
+                    <p className="font-medium">Call Disconnected</p>
+                    <p className="text-sm">You left the live session but can rejoin if it's still active.</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Session Header */}
+          <Card className="mb-8 bg-white/10 backdrop-blur-sm border-gray-700">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-purple-600 rounded-full">
+                    <Video className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-white text-2xl">{session.title}</CardTitle>
+                    <p className="text-gray-300 mt-1">Live group coaching session</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge 
+                    className={`${getLevelColor(session.learning_path)} text-white capitalize`}
+                  >
+                    {session.learning_path}
+                  </Badge>
+                  <Badge variant={sessionStatus.color as any} className="text-sm px-3 py-1">
+                    {sessionStatus.message}
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <p className="text-muted-foreground">{session.description}</p>
-              </div>
+          </Card>
 
-              <div className="flex items-center justify-center">
-                <Badge variant={sessionStatus.canJoin ? "default" : "secondary"}>
-                  {sessionStatus.message}
-                </Badge>
-              </div>
-
-              {/* Session Details */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="font-medium">Scheduled Time</div>
-                  <div className="text-muted-foreground">
-                    {new Date(session.scheduled_time).toLocaleString()}
+          <div className="grid lg:grid-cols-3 gap-8">
+            {/* Session Details */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Session Info */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white">Session Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="p-4 bg-white/5 rounded-lg">
+                    <p className="text-sm text-gray-400 mb-2">Description</p>
+                    <p className="text-white leading-relaxed">{session.description}</p>
                   </div>
-                </div>
-                <div>
-                  <div className="font-medium">Duration</div>
-                  <div className="text-muted-foreground">{session.duration} minutes</div>
-                </div>
-              </div>
 
-              {/* Participants Preview */}
-              <div>
-                <h3 className="font-medium mb-3">Participants ({session.participants.length + 1})</h3>
-                <div className="space-y-2">
-                  {/* Coach */}
-                  <div className="flex items-center gap-3 p-2 bg-muted rounded-lg">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach.id}`} />
-                      <AvatarFallback>{session.coach.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="font-medium">{session.coach.name}</div>
-                      <div className="text-xs text-muted-foreground">Host</div>
-                    </div>
-                  </div>
-                  
-                  {/* Students */}
-                  {session.participants.map((participant, index) => (
-                    <div key={index} className="flex items-center gap-3 p-2 rounded-lg">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={participant.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${participant.student_id}`} />
-                        <AvatarFallback>{participant.student.name.charAt(0)}</AvatarFallback>
-                      </Avatar>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                      <Clock className="h-5 w-5 text-blue-400" />
                       <div>
-                        <div className="font-medium">{participant.student.name}</div>
-                        <div className="text-xs text-muted-foreground">Participant</div>
+                        <p className="text-sm text-gray-400">Duration</p>
+                        <p className="text-white font-medium">{session.duration} minutes</p>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                      <DollarSign className="h-5 w-5 text-green-400" />
+                      <div>
+                        <p className="text-sm text-gray-400">Price</p>
+                        <p className="text-white font-medium">${session.price}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                      <Users className="h-5 w-5 text-purple-400" />
+                      <div>
+                        <p className="text-sm text-gray-400">Participants</p>
+                        <p className="text-white font-medium">
+                          {session.participants.length} / {session.max_participants}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                      <BookOpen className="h-5 w-5 text-yellow-400" />
+                      <div>
+                        <p className="text-sm text-gray-400">Level</p>
+                        <p className="text-white font-medium capitalize">{session.learning_path}</p>
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Join Button */}
-              <div className="text-center space-y-4">
-                {sessionStatus.canJoin ? (
-                  <Button
-                    onClick={joinVideoCall}
-                    disabled={joining}
-                    className="w-full gap-2 bg-green-600 hover:bg-green-700"
-                    size="lg"
-                  >
-                    {joining ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        Joining Session...
-                      </>
+                  <div className="p-3 bg-white/5 rounded-lg">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      <p className="text-sm text-gray-400">Scheduled Time</p>
+                    </div>
+                    <p className="text-white font-medium">
+                      {new Date(session.scheduled_time).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}{' '}
+                      at{' '}
+                      {new Date(session.scheduled_time).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Join Session */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardContent className="pt-6">
+                  <div className="text-center space-y-4">
+                    {sessionStatus.canJoin ? (
+                      <Button
+                        onClick={joinVideoCall}
+                        disabled={joining}
+                        className={`w-full text-white py-6 text-lg font-semibold ${
+                          hasLeftCall 
+                            ? 'bg-purple-600 hover:bg-purple-700' 
+                            : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
+                        }`}
+                        size="lg"
+                      >
+                        {joining ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                            {hasLeftCall ? 'Rejoining Session...' : 'Joining Session...'}
+                          </>
+                        ) : (
+                          <>
+                            <Video className="h-5 w-5 mr-3" />
+                            {hasLeftCall 
+                              ? 'Rejoin Live Session' 
+                              : userRole === 'coach' 
+                                ? 'Start Live Session' 
+                                : 'Join Live Session'
+                            }
+                          </>
+                        )}
+                      </Button>
                     ) : (
-                      <>
-                        <Video className="h-4 w-4" />
-                        Join Live Session
-                      </>
+                      <Button disabled className="w-full py-6 text-lg" size="lg">
+                        {sessionStatus.message}
+                      </Button>
                     )}
-                  </Button>
-                ) : (
-                  <Button disabled className="w-full" size="lg">
-                    {sessionStatus.message}
-                  </Button>
-                )}
-                
-                <p className="text-xs text-muted-foreground">
-                  Make sure your camera and microphone are working before joining
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+                    
+                    <p className="text-sm text-gray-400">
+                      {hasLeftCall 
+                        ? 'Click above to rejoin the live session if it\'s still active.'
+                        : 'This session will open in full-screen mode with Daily.co\'s professional interface. All participants will join the same room automatically.'
+                      }
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
-      {/* Call UI - this will be rendered by Daily.co iframe */}
-      {isInCall && (
-        <div className="fixed top-4 left-4 z-50 flex gap-2">
-          <Button
-            onClick={toggleMicrophone}
-            variant={isMicOn ? "default" : "secondary"}
-            size="sm"
-          >
-            {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          </Button>
-          <Button
-            onClick={toggleCamera}
-            variant={isCameraOn ? "default" : "secondary"}
-            size="sm"
-          >
-            {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-          </Button>
-          <Button
-            onClick={startScreenShare}
-            variant="outline"
-            size="sm"
-          >
-            <Monitor className="h-4 w-4" />
-          </Button>
-          <Button
-            onClick={leaveCall}
-            variant="destructive"
-            size="sm"
-          >
-            <Phone className="h-4 w-4" />
-          </Button>
+            {/* Host & Participants */}
+            <div className="space-y-6">
+              {/* Host */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white text-lg">Session Host</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                    <Avatar className="h-14 w-14 border-2 border-purple-400">
+                      <AvatarImage src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach.id}`} />
+                      <AvatarFallback className="bg-purple-600 text-white text-lg">
+                        {session.coach.name.charAt(0)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-white">{session.coach.name}</p>
+                        {userRole === 'coach' && currentUser?.id === session.coach_id && (
+                          <Badge variant="default" className="text-xs">You</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-400">Coach & Session Host</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Participants */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white text-lg flex items-center gap-2">
+                    <Users className="h-5 w-5" />
+                    Participants ({session.participants.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {session.participants.length > 0 ? (
+                      session.participants.map((participant, index) => (
+                        <div key={index} className="flex items-center gap-3 p-2 bg-white/5 rounded-lg">
+                          <Avatar className="h-10 w-10 border border-blue-400">
+                            <AvatarImage src={participant.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${participant.student_id}`} />
+                            <AvatarFallback className="bg-blue-600 text-white text-sm">
+                              {participant.student.name.charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-white text-sm">{participant.student.name}</p>
+                              {currentUser?.id === participant.student_id && (
+                                <Badge variant="default" className="text-xs">You</Badge>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400">Student</p>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-gray-400 text-sm text-center py-4">
+                        No participants enrolled yet
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Session Guidelines */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white text-sm">Live Session Guidelines</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="text-sm text-gray-300 space-y-2">
+                    <li>• Join a few minutes early to test your setup</li>
+                    <li>• Mute yourself when not speaking</li>
+                    <li>• Use the chat for questions during the session</li>
+                    <li>• Respect other participants' time</li>
+                    <li>• Take notes during the session</li>
+                    <li>• Use good lighting for better video quality</li>
+                    <li>• You can rejoin if disconnected</li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

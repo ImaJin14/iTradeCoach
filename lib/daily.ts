@@ -1,3 +1,4 @@
+// lib/daily.ts
 import DailyIframe from '@daily-co/daily-js';
 
 export interface DailyConfig {
@@ -17,10 +18,9 @@ export class DailyManager {
     this.roomUrl = config.roomUrl || '';
   }
 
-  async createRoom(sessionId: string): Promise<{ roomUrl: string; token?: string }> {
+  async getOrCreateRoom(sessionId: string): Promise<{ roomUrl: string; token?: string }> {
     try {
-      // Create room via your backend API that calls Daily.co API
-      const response = await fetch('/api/daily/create-room', {
+      const response = await fetch('/api/daily/get-or-create-room', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -32,14 +32,15 @@ export class DailyManager {
             start_video_off: true,
             enable_screenshare: true,
             enable_chat: true,
-            max_participants: 10,
-            exp: Math.round(Date.now() / 1000) + (4 * 60 * 60), // 4 hours from now
+            enable_people_ui: true,
+            max_participants: 20,
+            exp: Math.round(Date.now() / 1000) + (4 * 60 * 60),
           }
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create room');
+        throw new Error('Failed to get or create room');
       }
 
       const data = await response.json();
@@ -50,13 +51,14 @@ export class DailyManager {
         token: data.token
       };
     } catch (error) {
-      console.error('Error creating Daily room:', error);
+      console.error('Error getting/creating Daily room:', error);
       throw error;
     }
   }
 
   async joinRoom(roomUrl: string, config?: DailyConfig): Promise<any> {
     try {
+      // Create iframe with Daily's prebuilt UI
       this.daily = DailyIframe.createFrame({
         iframeStyle: {
           position: 'fixed',
@@ -69,6 +71,7 @@ export class DailyManager {
         },
         showLeaveButton: true,
         showFullscreenButton: true,
+        showParticipantsBar: true,
       });
 
       const joinConfig = {
@@ -76,7 +79,7 @@ export class DailyManager {
         userName: config?.userName || this.config.userName || 'Participant',
         startAudioOff: true,
         startVideoOff: true,
-        ...config
+        token: config?.token
       };
 
       await this.daily.join(joinConfig);
@@ -110,32 +113,6 @@ export class DailyManager {
   onCallStateChanged(callback: (state: any) => void) {
     if (this.daily) {
       this.daily.on('call-state-changed', callback);
-    }
-  }
-
-  async toggleCamera(): Promise<void> {
-    if (this.daily) {
-      const localVideo = this.daily.localVideo();
-      await this.daily.setLocalVideo(!localVideo);
-    }
-  }
-
-  async toggleMicrophone(): Promise<void> {
-    if (this.daily) {
-      const localAudio = this.daily.localAudio();
-      await this.daily.setLocalAudio(!localAudio);
-    }
-  }
-
-  async startScreenShare(): Promise<void> {
-    if (this.daily) {
-      await this.daily.startScreenShare();
-    }
-  }
-
-  async stopScreenShare(): Promise<void> {
-    if (this.daily) {
-      await this.daily.stopScreenShare();
     }
   }
 

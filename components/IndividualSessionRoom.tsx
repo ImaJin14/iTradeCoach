@@ -1,3 +1,4 @@
+// components/IndividualSessionRoom.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -11,12 +12,11 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   Video, 
-  Mic, 
-  MicOff, 
-  VideoOff, 
-  Phone, 
-  Monitor,
-  ChevronLeft
+  ChevronLeft,
+  Clock,
+  DollarSign,
+  User,
+  RefreshCw
 } from "lucide-react";
 import Link from "next/link";
 
@@ -51,9 +51,9 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
   const [joining, setJoining] = useState(false);
   const [dailyManager, setDailyManager] = useState<DailyManager | null>(null);
   const [isInCall, setIsInCall] = useState(false);
-  const [isCameraOn, setIsCameraOn] = useState(false);
-  const [isMicOn, setIsMicOn] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string>('');
+  const [hasLeftCall, setHasLeftCall] = useState(false); // ✅ NEW: Track if user left call
   const router = useRouter();
   const { toast } = useToast();
 
@@ -65,11 +65,11 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
     const joinWindow = new Date(sessionStart.getTime() - 10 * 60000);
 
     if (now < joinWindow) {
-      return { canJoin: false, message: 'Session not yet available' };
+      return { canJoin: false, message: 'Session not yet available', color: 'secondary' };
     } else if (now >= joinWindow && now < sessionEnd) {
-      return { canJoin: true, message: 'Session is live' };
+      return { canJoin: true, message: 'Session is live', color: 'default' };
     } else {
-      return { canJoin: false, message: 'Session has ended' };
+      return { canJoin: false, message: 'Session has ended', color: 'destructive' };
     }
   };
 
@@ -93,7 +93,7 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('name')
+        .select('name, role')
         .eq('id', user.id)
         .single();
       
@@ -110,6 +110,7 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
         name: profile?.name || 'User',
         avatar_url: userProfile?.avatar_url
       });
+      setUserRole(profile?.role || '');
     } catch (error) {
       console.error('Error getting current user:', error);
     }
@@ -119,7 +120,6 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
     if (!sessionId) return;
 
     try {
-      // Get individual session details
       const { data: sessionData, error: sessionError } = await supabase
         .from('sessions')
         .select('*')
@@ -137,7 +137,6 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
 
       if (coachError) throw coachError;
 
-      // Get coach avatar
       const { data: coachUserProfile } = await supabase
         .from('user_profiles')
         .select('avatar_url')
@@ -153,7 +152,6 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
 
       if (studentError) throw studentError;
 
-      // Get student avatar
       const { data: studentUserProfile } = await supabase
         .from('user_profiles')
         .select('avatar_url')
@@ -208,17 +206,16 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
     }
 
     setJoining(true);
+    setHasLeftCall(false); // ✅ Reset the left call state
+    
     try {
-      // Initialize Daily manager
       const manager = new DailyManager({
         userName: currentUser.name,
         userAvatar: currentUser.avatar_url
       });
 
-      // Create or get room
-      const { roomUrl, token } = await manager.createRoom(sessionId);
+      const { roomUrl, token } = await manager.getOrCreateRoom(sessionId);
       
-      // Join the call
       await manager.joinRoom(roomUrl, {
         token,
         userName: currentUser.name
@@ -227,15 +224,37 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
       setDailyManager(manager);
       setIsInCall(true);
 
-      // Set up event listeners
+      // ✅ UPDATED: Set up event listeners
       manager.onCallStateChanged((state) => {
+        console.log('Call state changed:', state);
         if (state === 'left') {
+          // ✅ CHANGED: Stay on the same page instead of redirecting
           setIsInCall(false);
           setDailyManager(null);
+          setHasLeftCall(true); // ✅ NEW: Mark that user left the call
+          
+          toast({
+            title: "Call Ended",
+            description: "You can rejoin the session if it's still active.",
+          });
         }
       });
 
-      // Update session status to in progress
+      manager.onParticipantJoined((participant) => {
+        toast({
+          title: "Participant Joined",
+          description: `${participant.user_name || 'Someone'} joined the session`,
+        });
+      });
+
+      manager.onParticipantLeft((participant) => {
+        toast({
+          title: "Participant Left",
+          description: `${participant.user_name || 'Someone'} left the session`,
+        });
+      });
+
+      // Update session status
       await supabase
         .from('sessions')
         .update({ status: 'in_progress' })
@@ -243,7 +262,7 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
 
       toast({
         title: "Joined Session",
-        description: "You're now in the session!",
+        description: "Welcome to your 1-on-1 session!",
       });
 
     } catch (error: any) {
@@ -258,33 +277,11 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
     }
   };
 
+  // ✅ NEW: Manual leave function for explicit leave button
   const leaveCall = async () => {
     if (dailyManager && sessionId) {
       await dailyManager.leaveRoom();
-      setIsInCall(false);
-      setDailyManager(null);
-      
-      // Update session status if needed
-      await supabase
-        .from('sessions')
-        .update({ status: 'completed' })
-        .eq('id', sessionId);
-        
-      router.push('/dashboard');
-    }
-  };
-
-  const toggleCamera = async () => {
-    if (dailyManager) {
-      await dailyManager.toggleCamera();
-      setIsCameraOn(!isCameraOn);
-    }
-  };
-
-  const toggleMicrophone = async () => {
-    if (dailyManager) {
-      await dailyManager.toggleMicrophone();
-      setIsMicOn(!isMicOn);
+      // The onCallStateChanged will handle the rest
     }
   };
 
@@ -318,160 +315,237 @@ export default function IndividualSessionRoom({ sessionId }: IndividualSessionRo
 
   const sessionStatus = getSessionStatus(session.scheduled_time, session.duration);
 
+  // If in call, Daily.co UI takes over the entire screen
+  if (isInCall) {
+    return (
+      <div className="fixed inset-0 z-50 bg-black">
+        {/* Daily.co iframe will be rendered here automatically */}
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-900">
-      {!isInCall && (
-        <div className="container py-8">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="gap-2 mb-4 text-white hover:text-gray-300"
-            asChild
-          >
-            <Link href="/dashboard">
-              <ChevronLeft className="h-4 w-4" />
-              Back to Dashboard
-            </Link>
-          </Button>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="container py-8">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="gap-2 mb-6 text-white hover:text-gray-300 hover:bg-white/10"
+          asChild
+        >
+          <Link href="/dashboard">
+            <ChevronLeft className="h-4 w-4" />
+            Back to Dashboard
+          </Link>
+        </Button>
 
-          <Card className="max-w-2xl mx-auto">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Video className="h-6 w-6" />
-                1-on-1 Session
-              </CardTitle>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <span>Coach: {session.coach.name}</span>
-                <span>Student: {session.student.name}</span>
-                <span>{session.duration} minutes</span>
-                <span>${session.price}</span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {session.notes && (
-                <div>
-                  <h3 className="font-medium mb-2">Session Notes</h3>
-                  <p className="text-muted-foreground">{session.notes}</p>
+        <div className="max-w-4xl mx-auto">
+          {/* ✅ NEW: Show reconnection message if user left call */}
+          {hasLeftCall && sessionStatus.canJoin && (
+            <Card className="mb-6 bg-blue-600/20 border-blue-500/30">
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-3 text-blue-200">
+                  <RefreshCw className="h-5 w-5" />
+                  <div>
+                    <p className="font-medium">Call Disconnected</p>
+                    <p className="text-sm">You left the session but can rejoin if it's still active.</p>
+                  </div>
                 </div>
-              )}
+              </CardContent>
+            </Card>
+          )}
 
-              <div className="flex items-center justify-center">
-                <Badge variant={sessionStatus.canJoin ? "default" : "secondary"}>
+          {/* Session Header */}
+          <Card className="mb-8 bg-white/10 backdrop-blur-sm border-gray-700">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-blue-600 rounded-full">
+                    <Video className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-white text-2xl">1-on-1 Coaching Session</CardTitle>
+                    <p className="text-gray-300 mt-1">Private session between coach and student</p>
+                  </div>
+                </div>
+                <Badge variant={sessionStatus.color as any} className="text-sm px-3 py-1">
                   {sessionStatus.message}
                 </Badge>
               </div>
+            </CardHeader>
+          </Card>
 
-              {/* Session Details */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <div className="font-medium">Scheduled Time</div>
-                  <div className="text-muted-foreground">
-                    {new Date(session.scheduled_time).toLocaleString()}
+          <div className="grid lg:grid-cols-3 gap-8">
+            {/* Session Details */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Session Info */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white">Session Details</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                      <Clock className="h-5 w-5 text-blue-400" />
+                      <div>
+                        <p className="text-sm text-gray-400">Duration</p>
+                        <p className="text-white font-medium">{session.duration} minutes</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                      <DollarSign className="h-5 w-5 text-green-400" />
+                      <div>
+                        <p className="text-sm text-gray-400">Price</p>
+                        <p className="text-white font-medium">${session.price}</p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <div className="font-medium">Duration</div>
-                  <div className="text-muted-foreground">{session.duration} minutes</div>
-                </div>
-              </div>
 
-              {/* Participants */}
-              <div>
-                <h3 className="font-medium mb-3">Participants</h3>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3 p-2 bg-muted rounded-lg">
-                    <Avatar className="h-8 w-8">
+                  <div className="p-3 bg-white/5 rounded-lg">
+                    <p className="text-sm text-gray-400 mb-1">Scheduled Time</p>
+                    <p className="text-white font-medium">
+                      {new Date(session.scheduled_time).toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}{' '}
+                      at{' '}
+                      {new Date(session.scheduled_time).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+
+                  {session.notes && (
+                    <div className="p-3 bg-white/5 rounded-lg">
+                      <p className="text-sm text-gray-400 mb-1">Session Notes</p>
+                      <p className="text-white">{session.notes}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Join Session */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardContent className="pt-6">
+                  <div className="text-center space-y-4">
+                    {sessionStatus.canJoin ? (
+                      <Button
+                        onClick={joinVideoCall}
+                        disabled={joining}
+                        className={`w-full text-white py-6 text-lg font-semibold ${
+                          hasLeftCall 
+                            ? 'bg-blue-600 hover:bg-blue-700' 
+                            : 'bg-green-600 hover:bg-green-700'
+                        }`}
+                        size="lg"
+                      >
+                        {joining ? (
+                          <>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
+                            {hasLeftCall ? 'Rejoining Session...' : 'Joining Session...'}
+                          </>
+                        ) : (
+                          <>
+                            <Video className="h-5 w-5 mr-3" />
+                            {hasLeftCall 
+                              ? 'Rejoin Session' 
+                              : userRole === 'coach' 
+                                ? 'Start Session' 
+                                : 'Join Session'
+                            }
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button disabled className="w-full py-6 text-lg" size="lg">
+                        {sessionStatus.message}
+                      </Button>
+                    )}
+                    
+                    <p className="text-sm text-gray-400">
+                      {hasLeftCall 
+                        ? 'Click above to rejoin the session if it\'s still active.'
+                        : 'Make sure your camera and microphone are working. The session will open in full-screen mode with Daily.co\'s interface.'
+                      }
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Participants */}
+            <div className="space-y-6">
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <User className="h-5 w-5" />
+                    Participants
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Coach */}
+                  <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                    <Avatar className="h-12 w-12 border-2 border-blue-400">
                       <AvatarImage src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach.id}`} />
-                      <AvatarFallback>{session.coach.name.charAt(0)}</AvatarFallback>
+                      <AvatarFallback className="bg-blue-600 text-white">
+                        {session.coach.name.charAt(0)}
+                      </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <div className="font-medium">{session.coach.name}</div>
-                      <div className="text-xs text-muted-foreground">Coach</div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-white">{session.coach.name}</p>
+                        {userRole === 'coach' && currentUser?.id === session.coach_id && (
+                          <Badge variant="default" className="text-xs">You</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-400">Coach</p>
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-3 p-2 rounded-lg">
-                    <Avatar className="h-8 w-8">
+                  {/* Student */}
+                  <div className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+                    <Avatar className="h-12 w-12 border-2 border-green-400">
                       <AvatarImage src={session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student.id}`} />
-                      <AvatarFallback>{session.student.name.charAt(0)}</AvatarFallback>
+                      <AvatarFallback className="bg-green-600 text-white">
+                        {session.student.name.charAt(0)}
+                      </AvatarFallback>
                     </Avatar>
-                    <div>
-                      <div className="font-medium">{session.student.name}</div>
-                      <div className="text-xs text-muted-foreground">Student</div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium text-white">{session.student.name}</p>
+                        {userRole === 'student' && currentUser?.id === session.student_id && (
+                          <Badge variant="default" className="text-xs">You</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-400">Student</p>
                     </div>
                   </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
 
-              {/* Join Button */}
-              <div className="text-center space-y-4">
-                {sessionStatus.canJoin ? (
-                  <Button
-                    onClick={joinVideoCall}
-                    disabled={joining}
-                    className="w-full gap-2 bg-green-600 hover:bg-green-700"
-                    size="lg"
-                  >
-                    {joining ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                        Joining Session...
-                      </>
-                    ) : (
-                      <>
-                        <Video className="h-4 w-4" />
-                        Join Session
-                      </>
-                    )}
-                  </Button>
-                ) : (
-                  <Button disabled className="w-full" size="lg">
-                    {sessionStatus.message}
-                  </Button>
-                )}
-                
-                <p className="text-xs text-muted-foreground">
-                  Make sure your camera and microphone are working before joining
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+              {/* Session Tips */}
+              <Card className="bg-white/10 backdrop-blur-sm border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white text-sm">Session Tips</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="text-sm text-gray-300 space-y-2">
+                    <li>• Test your camera and microphone before joining</li>
+                    <li>• Use headphones for better audio quality</li>
+                    <li>• Ensure stable internet connection</li>
+                    <li>• Have a quiet environment</li>
+                    <li>• Keep session notes handy</li>
+                    <li>• You can rejoin if disconnected</li>
+                  </ul>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
-      )}
-
-      {/* Call UI - this will be rendered by Daily.co iframe */}
-      {isInCall && (
-        <div className="fixed top-4 left-4 z-50 flex gap-2">
-          <Button
-            onClick={toggleMicrophone}
-            variant={isMicOn ? "default" : "secondary"}
-            size="sm"
-          >
-            {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-          </Button>
-          <Button
-            onClick={toggleCamera}
-            variant={isCameraOn ? "default" : "secondary"}
-            size="sm"
-          >
-            {isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
-          </Button>
-          <Button
-            onClick={() => dailyManager?.startScreenShare()}
-            variant="outline"
-            size="sm"
-          >
-            <Monitor className="h-4 w-4" />
-          </Button>
-          <Button
-            onClick={leaveCall}
-            variant="destructive"
-            size="sm"
-          >
-            <Phone className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
