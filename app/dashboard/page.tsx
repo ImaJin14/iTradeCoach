@@ -33,26 +33,11 @@ export default function DashboardPage() {
 
         if (profileError) throw profileError;
 
-        // Get user_profile data for profile completion status
-        const { data: userProfile } = await supabase
-          .from('user_profiles')
-          .select('profile_complete')
-          .eq('prof_id', user.id)
-          .maybeSingle();
-
-        // Check if this is an OAuth user who hasn't completed their profile
-        const isOAuthUser = user.app_metadata.provider !== 'email';
-        const profileComplete = userProfile?.profile_complete || false;
-
-        if (isOAuthUser && !profileComplete) {
-          console.log('OAuth user with incomplete profile, redirecting to complete-profile');
-          router.replace('/complete-profile?from=oauth');
-          return;
-        }
-
-        // If profile exists but role is missing, also redirect to complete profile
-        if (!profile.role || profile.role === null) {
-          router.replace('/complete-profile');
+        // Since middleware handles profile completion checks, 
+        // we can assume if we reach here, the profile is complete
+        if (!profile.role) {
+          // This should not happen due to middleware, but just in case
+          router.replace('/profile/complete-profile');
           return;
         }
 
@@ -99,10 +84,16 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
             <p className="text-muted-foreground mb-4">Unable to determine your role.</p>
             <button 
-              onClick={() => router.push('/sign-in')}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+              onClick={() => router.push('/profile/complete-profile')}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 mr-2"
             >
-              Return to Sign In
+              Complete Profile
+            </button>
+            <button 
+              onClick={() => router.push('/sign-in')}
+              className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/90"
+            >
+              Sign In Again
             </button>
           </div>
         </div>

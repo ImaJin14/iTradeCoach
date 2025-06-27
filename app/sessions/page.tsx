@@ -11,7 +11,9 @@ import {
   Users,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Video,
+  User
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,12 +47,16 @@ interface Session {
   notes: string | null;
   coach_id: string;
   student_id: string;
+  type: 'individual' | 'live_session';
+  title?: string;
+  max_participants?: number;
+  current_participants?: number;
   coach: {
     id: string;
     name: string;
     avatar_url: string | null;
   };
-  student: {
+  student?: {
     id: string;
     name: string;
     avatar_url: string | null;
@@ -63,10 +69,63 @@ export default function SessionsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [timeFilter, setTimeFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRole, setUserRole] = useState<string>('');
   const router = useRouter();
   const { toast } = useToast();
+
+  // ✅ FIXED: Session status logic to consider duration
+  const getSessionStatus = (scheduledTime: string, duration: number) => {
+    const now = new Date();
+    const sessionStart = new Date(scheduledTime);
+    const sessionEnd = new Date(sessionStart.getTime() + duration * 60000);
+    const joinWindow = new Date(sessionStart.getTime() - 10 * 60000);
+
+    if (now < joinWindow) {
+      return { canJoin: false, message: 'Session not yet available' };
+    } else if (now >= joinWindow && now < sessionEnd) {
+      return { canJoin: true, message: 'Session is live' };
+    } else {
+      return { canJoin: false, message: 'Session has ended' };
+    }
+  };
+
+  // ✅ FIXED: Join session handler
+  const handleJoinSession = async (session: Session) => {
+    const sessionStatus = getSessionStatus(session.scheduled_time, session.duration);
+    
+    if (!sessionStatus.canJoin) {
+      toast({
+        title: "Session Not Available",
+        description: sessionStatus.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      if (session.type === 'live_session') {
+        // Redirect to live session room
+        window.location.href = `/session/${session.id}/live`;
+      } else {
+        // Redirect to individual session room
+        window.location.href = `/session/${session.id}/room`;
+      }
+      
+      toast({
+        title: "Joining Session",
+        description: "Redirecting to session room...",
+      });
+    } catch (error: any) {
+      console.error('Error joining session:', error);
+      toast({
+        title: "Error",
+        description: "Failed to join session. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   useEffect(() => {
     async function checkAccessAndLoadSessions() {
@@ -88,8 +147,8 @@ export default function SessionsPage() {
         if (profileError) throw profileError;
 
         setCurrentUser(user);
-        setUserRole(profile.role || ''); // Handle null role
-        await fetchSessions(user.id, profile.role || '');
+        setUserRole(profile.role || '');
+        await fetchAllSessions(user.id, profile.role || '');
       } catch (error: any) {
         console.error('Error checking access:', error);
         toast({
@@ -105,102 +164,19 @@ export default function SessionsPage() {
     checkAccessAndLoadSessions();
   }, [router, toast]);
 
-  async function fetchSessions(userId: string, role: string) {
+  async function fetchAllSessions(userId: string, role: string) {
     try {
-      // Get session data with proper filtering
-      let query = supabase
-        .from('sessions')
-        .select(`
-          id,
-          scheduled_time,
-          duration,
-          status,
-          price,
-          notes,
-          coach_id,
-          student_id
-        `)
-        .order('scheduled_time', { ascending: false });
-
-      // Filter sessions based on user role
-      if (role === 'coach') {
-        query = query.eq('coach_id', userId);
-      } else if (role === 'student') {
-        query = query.eq('student_id', userId);
-      } else if (role === 'admin') {
-        // Admin sees all sessions - no additional filter needed
-      } else {
-        // For other roles, show only their sessions
-        query = query.or(`coach_id.eq.${userId},student_id.eq.${userId}`);
-      }
-
-      const { data: sessionData, error: sessionError } = await query;
-
-      if (sessionError) {
-        console.error('Session query error:', sessionError);
-        throw sessionError;
-      }
-
-      if (!sessionData || sessionData.length === 0) {
-        setSessions([]);
-        return;
-      }
-
-      // Get unique coach and student IDs
-      const coachIds = Array.from(new Set(sessionData.map(s => s.coach_id).filter(Boolean)));
-      const studentIds = Array.from(new Set(sessionData.map(s => s.student_id).filter(Boolean)));
-
-      // Fetch all user profiles for coaches and students
-      const allUserIds = [...coachIds, ...studentIds];
-      const { data: userProfiles, error: profilesError } = await supabase
-        .from('user_profiles')
-        .select('prof_id, avatar_url')
-        .in('prof_id', allUserIds);
-
-      if (profilesError) {
-        console.error('User profiles error:', profilesError);
-      }
-
-      // Fetch all basic profiles for names
-      const { data: basicProfiles, error: basicProfilesError } = await supabase
-        .from('profiles')
-        .select('id, name')
-        .in('id', allUserIds);
-
-      if (basicProfilesError) {
-        console.error('Basic profiles error:', basicProfilesError);
-      }
-
-      // Combine the data efficiently with proper type handling
-      const enrichedSessions: Session[] = sessionData.map(session => {
-        const coachProfile = userProfiles?.find(up => up.prof_id === session.coach_id);
-        const coachBasic = basicProfiles?.find(bp => bp.id === session.coach_id);
-        const studentProfile = userProfiles?.find(up => up.prof_id === session.student_id);
-        const studentBasic = basicProfiles?.find(bp => bp.id === session.student_id);
-
-        return {
-          id: session.id,
-          scheduled_time: session.scheduled_time,
-          duration: session.duration || 60, // Default duration
-          status: session.status || 'scheduled', // Default status
-          price: session.price || 0, // Default price
-          notes: session.notes,
-          coach_id: session.coach_id,
-          student_id: session.student_id,
-          coach: {
-            id: session.coach_id,
-            name: coachBasic?.name || 'Unknown Coach',
-            avatar_url: coachProfile?.avatar_url || null
-          },
-          student: {
-            id: session.student_id,
-            name: studentBasic?.name || 'Unknown Student',
-            avatar_url: studentProfile?.avatar_url || null
-          }
-        };
-      });
-
-      setSessions(enrichedSessions);
+      // Fetch individual sessions
+      const individualSessions = await fetchIndividualSessions(userId, role);
+      
+      // Fetch live sessions
+      const liveSessions = await fetchLiveSessions(userId, role);
+      
+      // Combine and sort all sessions
+      const allSessions = [...individualSessions, ...liveSessions]
+        .sort((a, b) => new Date(b.scheduled_time).getTime() - new Date(a.scheduled_time).getTime());
+      
+      setSessions(allSessions);
     } catch (error: any) {
       console.error('Error fetching sessions:', error);
       toast({
@@ -212,13 +188,209 @@ export default function SessionsPage() {
     }
   }
 
+  async function fetchIndividualSessions(userId: string, role: string): Promise<Session[]> {
+    let query = supabase
+      .from('sessions')
+      .select(`
+        id,
+        scheduled_time,
+        duration,
+        status,
+        price,
+        notes,
+        coach_id,
+        student_id
+      `)
+      .order('scheduled_time', { ascending: false });
+
+    // Filter sessions based on user role
+    if (role === 'coach') {
+      query = query.eq('coach_id', userId);
+    } else if (role === 'student') {
+      query = query.eq('student_id', userId);
+    } else if (role === 'admin') {
+      // Admin sees all sessions - no additional filter needed
+    } else {
+      // For other roles, show only their sessions
+      query = query.or(`coach_id.eq.${userId},student_id.eq.${userId}`);
+    }
+
+    const { data: sessionData, error: sessionError } = await query;
+
+    if (sessionError) {
+      console.error('Individual session query error:', sessionError);
+      throw sessionError;
+    }
+
+    if (!sessionData || sessionData.length === 0) {
+      return [];
+    }
+
+    // Get unique coach and student IDs
+    const coachIds = Array.from(new Set(sessionData.map(s => s.coach_id).filter(Boolean)));
+    const studentIds = Array.from(new Set(sessionData.map(s => s.student_id).filter(Boolean)));
+
+    // Fetch all user profiles for coaches and students
+    const allUserIds = [...coachIds, ...studentIds];
+    const { data: userProfiles } = await supabase
+      .from('user_profiles')
+      .select('prof_id, avatar_url')
+      .in('prof_id', allUserIds);
+
+    // Fetch all basic profiles for names
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name')
+      .in('id', allUserIds);
+
+    // Combine the data efficiently with proper type handling
+    const enrichedSessions: Session[] = sessionData.map(session => {
+      const coachProfile = userProfiles?.find(up => up.prof_id === session.coach_id);
+      const coachBasic = profiles?.find(bp => bp.id === session.coach_id);
+      const studentProfile = userProfiles?.find(up => up.prof_id === session.student_id);
+      const studentBasic = profiles?.find(bp => bp.id === session.student_id);
+
+      return {
+        id: session.id,
+        scheduled_time: session.scheduled_time,
+        duration: session.duration || 60,
+        status: session.status || 'scheduled',
+        price: session.price || 0,
+        notes: session.notes,
+        coach_id: session.coach_id,
+        student_id: session.student_id,
+        type: 'individual',
+        coach: {
+          id: session.coach_id,
+          name: coachBasic?.name || 'Unknown Coach',
+          avatar_url: coachProfile?.avatar_url || null
+        },
+        student: {
+          id: session.student_id,
+          name: studentBasic?.name || 'Unknown Student',
+          avatar_url: studentProfile?.avatar_url || null
+        }
+      };
+    });
+
+    return enrichedSessions;
+  }
+
+  async function fetchLiveSessions(userId: string, role: string): Promise<Session[]> {
+    let liveSessions: any[] = [];
+
+    if (role === 'coach') {
+      // For coaches, get all their live sessions
+      const { data: coachLiveSessions, error: coachError } = await supabase
+        .from('live_sessions')
+        .select('*')
+        .eq('coach_id', userId)
+        .order('scheduled_time', { ascending: false });
+
+      if (coachError) {
+        console.error('Coach live sessions error:', coachError);
+        throw coachError;
+      }
+
+      liveSessions = coachLiveSessions || [];
+    } else if (role === 'student') {
+      // For students, get live sessions they're enrolled in
+      const { data: enrollments, error: enrollmentError } = await supabase
+        .from('session_enrollments')
+        .select('session_id, status')
+        .eq('student_id', userId)
+        .eq('status', 'enrolled');
+
+      if (enrollmentError) {
+        console.error('Student enrollments error:', enrollmentError);
+        return []; // Return empty array instead of throwing
+      }
+
+      if (enrollments && enrollments.length > 0) {
+        const sessionIds = enrollments.map(e => e.session_id);
+        
+        const { data: studentLiveSessions, error: liveSessionsError } = await supabase
+          .from('live_sessions')
+          .select('*')
+          .in('id', sessionIds)
+          .order('scheduled_time', { ascending: false });
+
+        if (liveSessionsError) {
+          console.error('Student live sessions error:', liveSessionsError);
+          return []; // Return empty array instead of throwing
+        }
+
+        liveSessions = studentLiveSessions || [];
+      }
+    } else if (role === 'admin') {
+      // For admin, get all live sessions
+      const { data: allLiveSessions, error: adminError } = await supabase
+        .from('live_sessions')
+        .select('*')
+        .order('scheduled_time', { ascending: false });
+
+      if (adminError) {
+        console.error('Admin live sessions error:', adminError);
+        throw adminError;
+      }
+
+      liveSessions = allLiveSessions || [];
+    }
+
+    if (liveSessions.length === 0) {
+      return [];
+    }
+
+    // Get coach details for live sessions
+    const coachIds = Array.from(new Set(liveSessions.map(s => s.coach_id)));
+    const { data: coachProfiles } = await supabase
+      .from('profiles')
+      .select('id, name')
+      .in('id', coachIds);
+
+    const { data: coachUserProfiles } = await supabase
+      .from('user_profiles')
+      .select('prof_id, avatar_url')
+      .in('prof_id', coachIds);
+
+    // Transform live sessions to match Session interface
+    const enrichedLiveSessions: Session[] = liveSessions.map(session => {
+      const coachProfile = coachProfiles?.find(cp => cp.id === session.coach_id);
+      const coachUserProfile = coachUserProfiles?.find(cup => cup.prof_id === session.coach_id);
+
+      return {
+        id: session.id,
+        scheduled_time: session.scheduled_time,
+        duration: session.duration || 60,
+        status: session.status || 'scheduled',
+        price: session.price || 0,
+        notes: session.description,
+        coach_id: session.coach_id,
+        student_id: '', // Live sessions don't have a specific student
+        type: 'live_session',
+        title: session.title,
+        max_participants: session.max_participants,
+        current_participants: session.current_participants,
+        coach: {
+          id: session.coach_id,
+          name: coachProfile?.name || 'Unknown Coach',
+          avatar_url: coachUserProfile?.avatar_url || null
+        }
+      };
+    });
+
+    return enrichedLiveSessions;
+  }
+
   const filteredSessions = sessions.filter(session => {
     const matchesSearch = 
       session.coach?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       session.student?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      session.notes?.toLowerCase().includes(searchTerm.toLowerCase());
+      session.notes?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      session.title?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesStatus = statusFilter === "all" || session.status === statusFilter;
+    const matchesType = typeFilter === "all" || session.type === typeFilter;
     
     // Time filter logic
     let matchesTime = true;
@@ -237,7 +409,7 @@ export default function SessionsPage() {
       matchesTime = sessionDate >= today && sessionDate < tomorrow;
     }
     
-    return matchesSearch && matchesStatus && matchesTime;
+    return matchesSearch && matchesStatus && matchesTime && matchesType;
   });
 
   const getStatusIcon = (status: string) => {
@@ -253,15 +425,17 @@ export default function SessionsPage() {
     }
   };
 
+  // ✅ FIXED: Session status badge logic to consider duration
   const getSessionStatusBadge = (session: Session) => {
     const sessionDate = new Date(session.scheduled_time);
+    const sessionEnd = new Date(sessionDate.getTime() + session.duration * 60000);
     const now = new Date();
     
     if (session.status === 'completed') {
       return <Badge variant="default">Completed</Badge>;
     } else if (session.status === 'cancelled') {
       return <Badge variant="destructive">Cancelled</Badge>;
-    } else if (sessionDate < now && session.status === 'scheduled') {
+    } else if (sessionEnd < now && session.status === 'scheduled') { // ✅ FIXED: Use session end time
       return <Badge variant="destructive">Missed</Badge>;
     } else if (sessionDate > now && session.status === 'scheduled') {
       return <Badge variant="secondary">Scheduled</Badge>;
@@ -286,9 +460,9 @@ export default function SessionsPage() {
   const getPageDescription = () => {
     switch (userRole) {
       case 'coach':
-        return 'View and manage all your coaching sessions';
+        return 'View and manage all your coaching sessions and live sessions';
       case 'student':
-        return 'Track your learning progress and upcoming sessions';
+        return 'Track your learning progress, upcoming sessions, and live sessions';
       case 'admin':
         return 'Monitor all sessions across the platform';
       default:
@@ -309,6 +483,7 @@ export default function SessionsPage() {
   return (
     <div className="container py-8">
       <div className="mb-8">
+        {/* ✅ FIXED: Back button */}
         <Button
           variant="ghost"
           size="sm"
@@ -343,41 +518,36 @@ export default function SessionsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Individual Sessions</CardTitle>
+            <User className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {sessions.filter(s => s.type === 'individual').length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Live Sessions</CardTitle>
+            <Video className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {sessions.filter(s => s.type === 'live_session').length}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Completed</CardTitle>
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
               {sessions.filter(s => s.status === 'completed').length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming</CardTitle>
-            <Clock className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {sessions.filter(s => s.status === 'scheduled' && new Date(s.scheduled_time) > new Date()).length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Month</CardTitle>
-            <Users className="h-4 w-4 text-purple-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {sessions.filter(s => {
-                const sessionDate = new Date(s.scheduled_time);
-                const now = new Date();
-                return sessionDate.getMonth() === now.getMonth() && 
-                       sessionDate.getFullYear() === now.getFullYear();
-              }).length}
             </div>
           </CardContent>
         </Card>
@@ -394,6 +564,16 @@ export default function SessionsPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        <Select value={typeFilter} onValueChange={setTypeFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter by type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="individual">Individual Sessions</SelectItem>
+            <SelectItem value="live_session">Live Sessions</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={timeFilter} onValueChange={setTimeFilter}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Filter by time" />
@@ -424,9 +604,9 @@ export default function SessionsPage() {
           <CardTitle>Session History</CardTitle>
           <CardDescription>
             {userRole === 'coach' 
-              ? "All your coaching sessions with students"
+              ? "All your coaching sessions and live sessions with students"
               : userRole === 'student'
-              ? "All your learning sessions with coaches"
+              ? "All your learning sessions and live sessions with coaches"
               : "Complete session history and status"
             }
           </CardDescription>
@@ -435,6 +615,7 @@ export default function SessionsPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Type</TableHead>
                 <TableHead>
                   {userRole === 'coach' ? 'Student' : userRole === 'student' ? 'Coach' : 'Participants'}
                 </TableHead>
@@ -442,94 +623,150 @@ export default function SessionsPage() {
                 <TableHead>Duration</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Price</TableHead>
-                <TableHead>Notes</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredSessions.map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell>
-                    {userRole === 'admin' ? (
+              {filteredSessions.map((session) => {
+                const sessionStatus = getSessionStatus(session.scheduled_time, session.duration);
+                
+                return (
+                  <TableRow key={session.id}>
+                    <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarImage 
-                              src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach_id}`} 
-                            />
-                            <AvatarFallback className="text-xs">
-                              {session.coach.name.charAt(0)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium text-sm">{session.coach.name}</span>
-                        </div>
-                        <span className="text-muted-foreground">→</span>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarImage 
-                              src={session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student_id}`} 
-                            />
-                            <AvatarFallback className="text-xs">
-                              {session.student.name.charAt(0)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="font-medium text-sm">{session.student.name}</span>
-                        </div>
+                        {session.type === 'live_session' ? (
+                          <Video className="h-4 w-4 text-primary" />
+                        ) : (
+                          <User className="h-4 w-4 text-blue-500" />
+                        )}
+                        <Badge variant={session.type === 'live_session' ? 'default' : 'secondary'}>
+                          {session.type === 'live_session' ? 'Live Session' : '1-on-1'}
+                        </Badge>
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage 
-                            src={userRole === 'coach' 
-                              ? (session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student_id}`)
-                              : (session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach_id}`)
-                            } 
-                          />
-                          <AvatarFallback>
-                            {userRole === 'coach' 
-                              ? session.student.name.charAt(0)
-                              : session.coach.name.charAt(0)
-                            }
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-medium">
-                            {userRole === 'coach' 
-                              ? session.student.name
-                              : session.coach.name
-                            }
+                    </TableCell>
+                    <TableCell>
+                      {userRole === 'admin' ? (
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage 
+                                src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach_id}`} 
+                              />
+                              <AvatarFallback className="text-xs">
+                                {session.coach.name.charAt(0)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="font-medium text-sm">{session.coach.name}</span>
                           </div>
+                          {session.type === 'individual' && session.student && (
+                            <>
+                              <span className="text-muted-foreground">→</span>
+                              <div className="flex items-center gap-2">
+                                <Avatar className="h-6 w-6">
+                                  <AvatarImage 
+                                    src={session.student.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student_id}`} 
+                                  />
+                                  <AvatarFallback className="text-xs">
+                                    {session.student.name.charAt(0)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="font-medium text-sm">{session.student.name}</span>
+                              </div>
+                            </>
+                          )}
+                          {session.type === 'live_session' && (
+                            <span className="text-sm text-muted-foreground">
+                              ({session.current_participants}/{session.max_participants} participants)
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          {session.type === 'live_session' ? (
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage 
+                                  src={session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach_id}`} 
+                                />
+                                <AvatarFallback>{session.coach.name.charAt(0)}</AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">{session.coach.name}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {session.current_participants}/{session.max_participants} participants
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage 
+                                  src={userRole === 'coach' 
+                                    ? (session.student?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.student_id}`)
+                                    : (session.coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.coach_id}`)
+                                  } 
+                                />
+                                <AvatarFallback>
+                                  {userRole === 'coach' 
+                                    ? session.student?.name.charAt(0) || 'S'
+                                    : session.coach.name.charAt(0)
+                                  }
+                                </AvatarFallback>
+                              </Avatar>
+                              <div>
+                                <div className="font-medium">
+                                  {userRole === 'coach' 
+                                    ? session.student?.name || 'Unknown Student'
+                                    : session.coach.name
+                                  }
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">
+                          {new Date(session.scheduled_time).toLocaleDateString()}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {new Date(session.scheduled_time).toLocaleTimeString([], { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
                         </div>
                       </div>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">
-                        {new Date(session.scheduled_time).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>{session.duration} min</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(session.status)}
+                        {getSessionStatusBadge(session)}
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {new Date(session.scheduled_time).toLocaleTimeString([], { 
-                          hour: '2-digit', 
-                          minute: '2-digit' 
-                        })}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell>{session.duration} min</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {getStatusIcon(session.status)}
-                      {getSessionStatusBadge(session)}
-                    </div>
-                  </TableCell>
-                  <TableCell>${session.price}</TableCell>
-                  <TableCell>
-                    <div className="max-w-[200px] truncate" title={session.notes || ''}>
-                      {session.notes || 'Coaching Session'}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell>${session.price}</TableCell>
+                    <TableCell>
+                      {/* ✅ FIXED: Join session button with working functionality */}
+                      {sessionStatus.canJoin ? (
+                        <Button
+                          onClick={() => handleJoinSession(session)}
+                          className="gap-2 bg-green-600 hover:bg-green-700"
+                          size="sm"
+                        >
+                          <Video className="h-4 w-4" />
+                          {userRole === 'coach' ? 'Start' : 'Join'}
+                        </Button>
+                      ) : (
+                        <Badge variant="outline" className="text-xs">
+                          {sessionStatus.message}
+                        </Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           

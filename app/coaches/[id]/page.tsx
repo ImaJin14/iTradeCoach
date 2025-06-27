@@ -4,7 +4,7 @@ import CoachProfileContent from "@/components/CoachProfileContent";
 // Generate static params for all coach profiles
 export async function generateStaticParams() {
   try {
-    // Fetch all coach IDs from your database
+    // Fetch all verified coach IDs from your database
     const { data: coaches, error } = await supabase
       .from('profiles')
       .select('id')

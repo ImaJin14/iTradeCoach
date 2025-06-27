@@ -27,20 +27,41 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: Avoid writing any logic between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-  // issues with users being randomly logged out.
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Protected routes
+  const { pathname } = request.nextUrl;
+
+  // Routes that don't require authentication
+  const publicRoutes = ['/', '/sign-in', '/sign-up', '/forgot-password', '/legal'];
+  
+  // Routes that require authentication
   const protectedRoutes = ['/dashboard', '/profile', '/settings'];
+  
+  // Auth routes (should redirect authenticated users)
   const authRoutes = ['/sign-in', '/sign-up'];
   
-  const isProtectedRoute = protectedRoutes.includes(request.nextUrl.pathname);
-  const isAuthRoute = authRoutes.includes(request.nextUrl.pathname);
+  // Check if current path is public
+  const isPublicRoute = publicRoutes.some(route => 
+    pathname === route || pathname.startsWith(`${route}/`)
+  );
+  
+  const isProtectedRoute = protectedRoutes.some(route => 
+    pathname === route || pathname.startsWith(`${route}/`)
+  );
+  
+  const isAuthRoute = authRoutes.includes(pathname);
+  const isCompleteProfileRoute = pathname === '/profile/complete-profile';
+
+  // Skip middleware for API routes and static files
+  if (
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/_next/') ||
+    pathname.includes('.')
+  ) {
+    return supabaseResponse;
+  }
 
   // Redirect unauthenticated users from protected routes to sign-in
   if (isProtectedRoute && !user) {
@@ -49,17 +70,73 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Redirect authenticated users from auth pages to dashboard
-  if (isAuthRoute && user) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
-    return NextResponse.redirect(url);
+  // If user is authenticated, check profile completion
+  if (user && (isProtectedRoute || isCompleteProfileRoute)) {
+    try {
+      // Check if profile is complete
+      const { data: userProfile, error } = await supabase
+        .from('user_profiles')
+        .select('profile_complete')
+        .eq('prof_id', user.id)
+        .single();
+
+      // If profile doesn't exist or is incomplete, redirect to complete-profile
+      // unless they're already on that page
+      if ((!userProfile || !userProfile.profile_complete) && !isCompleteProfileRoute) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/profile/complete-profile';
+        return NextResponse.redirect(url);
+      }
+
+      // If profile is complete and user is on complete-profile page, redirect to dashboard
+      if (userProfile?.profile_complete && isCompleteProfileRoute) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/dashboard';
+        return NextResponse.redirect(url);
+      }
+    } catch (error) {
+      console.error('Error checking profile completion:', error);
+      // If there's an error and user is not on complete-profile, redirect there
+      if (!isCompleteProfileRoute) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/profile/complete-profile';
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
-  // IMPORTANT: You *must* return the supabaseResponse object as it is.
+  // Redirect authenticated users with complete profiles from auth pages to dashboard
+  if (isAuthRoute && user) {
+    try {
+      const { data: userProfile } = await supabase
+        .from('user_profiles')
+        .select('profile_complete')
+        .eq('prof_id', user.id)
+        .single();
+
+      if (userProfile?.profile_complete) {
+        const url = request.nextUrl.clone();
+        url.pathname = '/dashboard';
+        return NextResponse.redirect(url);
+      } else {
+        // Profile incomplete, redirect to complete-profile
+        const url = request.nextUrl.clone();
+        url.pathname = '/profile/complete-profile';
+        return NextResponse.redirect(url);
+      }
+    } catch (error) {
+      // If error checking profile, redirect to complete-profile
+      const url = request.nextUrl.clone();
+      url.pathname = '/profile/complete-profile';
+      return NextResponse.redirect(url);
+    }
+  }
+
   return supabaseResponse;
 }
 
 export const config = {
-  matcher: ['/dashboard', '/profile', '/settings', '/sign-in', '/sign-up'],
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\..*|legal).*)',
+  ],
 };

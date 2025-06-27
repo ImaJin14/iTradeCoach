@@ -45,7 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Database } from "@/lib/types"; // Adjust path as needed
+import { Database } from "@/lib/types";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -54,7 +54,7 @@ const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 type VerificationStatus = Database["public"]["Enums"]["verification_status"];
 type StudentLevel = Database["public"]["Enums"]["student_level"];
 
-// Custom interface for Supabase storage errors (since StorageError type is incomplete)
+// Custom interface for Supabase storage errors
 interface SupabaseStorageError {
   message: string;
   statusCode?: string;
@@ -63,9 +63,12 @@ interface SupabaseStorageError {
   cause?: any;
 }
 
-// Enhanced schema with role-specific fields (role removed as it's read-only)
+// Enhanced schema with role field (now editable)
 const profileFormSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
+  role: z.enum(["student", "coach"], {
+    required_error: "Please select your role",
+  }),
   bio: z.string().max(500, { message: "Bio must be less than 500 characters" }).optional(),
   website: z.string().url({ message: "Please enter a valid URL" }).optional().or(z.literal("")),
   twitter: z.string().optional(),
@@ -139,6 +142,7 @@ export default function ProfilePage() {
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
       name: "",
+      role: "student",
       bio: "",
       website: "",
       twitter: "",
@@ -271,6 +275,7 @@ export default function ProfilePage() {
         // Reset form with the correct data, including role-specific fields
         form.reset({
           name: combinedProfile.name || "",
+          role: (combinedProfile.role as "student" | "coach") || "student",
           bio: combinedProfile.bio || "",
           website: combinedProfile.website || "",
           twitter: combinedProfile.twitter || "",
@@ -453,16 +458,30 @@ export default function ProfilePage() {
         throw new Error('Not authenticated');
       }
 
-      // Update name in profiles table (role is not updatable)
+      // Check if role has changed
+      const roleChanged = fullProfileData?.role !== data.role;
+
+      // Update name and role in profiles table
       const { error: profileUpdateError } = await supabase
         .from('profiles')
         .update({
           name: data.name,
+          role: data.role, // Now we update the role
           updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
 
       if (profileUpdateError) throw profileUpdateError;
+
+      // If role changed, handle role-specific profile cleanup and creation
+      if (roleChanged) {
+        // Clean up old role-specific data
+        if (fullProfileData?.role === 'coach') {
+          await supabase.from('coach_profiles').delete().eq('coach_id', user.id);
+        } else if (fullProfileData?.role === 'student') {
+          await supabase.from('student_profiles').delete().eq('student_id', user.id);
+        }
+      }
 
       // Update profile details in user_profiles table
       const { error: userProfileUpdateError } = await supabase
@@ -481,13 +500,9 @@ export default function ProfilePage() {
 
       if (userProfileUpdateError) throw userProfileUpdateError;
 
-      // Handle role-specific updates based on current role
-      if (fullProfileData?.role === 'coach') {
+      // Handle role-specific updates
+      if (data.role === 'coach') {
         const expertiseAreas = data.expertise_areas?.map(item => item.value).filter(Boolean) || [];
-        
-        // Ensure we're using the correct verification status type
-        const currentVerificationStatus: VerificationStatus = 
-          (fullProfileData?.verification_status as VerificationStatus) || 'pending';
         
         const { error: coachProfileError } = await supabase
           .from('coach_profiles')
@@ -497,23 +512,22 @@ export default function ProfilePage() {
             expertise_areas: expertiseAreas,
             algorand_wallet: data.algorand_wallet || null,
             video_intro_url: data.video_intro_url || null,
-            // Keep existing system-managed fields with proper types
-            verification_status: currentVerificationStatus,
-            rating: fullProfileData?.rating || 0,
-            total_students: fullProfileData?.total_students || 0,
-            earnings: fullProfileData?.earnings || 0,
-            subscription_active: fullProfileData?.subscription_active || false,
-            subscription_required: fullProfileData?.subscription_required || false,
+            // Set default values for new coach profiles
+            verification_status: 'pending' as VerificationStatus,
+            rating: 0,
+            total_students: 0,
+            earnings: 0,
+            subscription_active: false,
+            subscription_required: false,
             updated_at: new Date().toISOString(),
           }, {
             onConflict: 'coach_id'
           });
 
         if (coachProfileError) throw coachProfileError;
-      } else if (fullProfileData?.role === 'student') {
+      } else if (data.role === 'student') {
         const learningGoals = data.learning_goals?.map(item => item.value).filter(Boolean) || [];
         
-        // Ensure we're using the correct student level type
         const currentLevel: StudentLevel = 
           (data.current_level as StudentLevel) || 'beginner';
         
@@ -524,11 +538,11 @@ export default function ProfilePage() {
             current_level: currentLevel,
             learning_goals: learningGoals,
             selected_path: data.selected_path || null,
-            // Keep existing system-managed fields
-            tokens_earned: fullProfileData?.tokens_earned || 0,
-            courses_completed: fullProfileData?.courses_completed || [],
-            selected_coach_id: fullProfileData?.selected_coach_id || null,
-            subscription_required: fullProfileData?.subscription_required || false,
+            // Set default values for new student profiles
+            tokens_earned: 0,
+            courses_completed: [],
+            selected_coach_id: null,
+            subscription_required: false,
             updated_at: new Date().toISOString(),
           }, {
             onConflict: 'student_id'
@@ -541,6 +555,7 @@ export default function ProfilePage() {
       if (isOAuthUser) {
         const { error: authUpdateError } = await supabase.auth.updateUser({
           data: {
+            role: data.role,
             profile_complete: true,
           }
         });
@@ -553,30 +568,38 @@ export default function ProfilePage() {
       setProfileComplete(true);
       toast({
         title: "Profile updated",
-        description: "Your profile has been successfully updated.",
+        description: roleChanged 
+          ? `Your role has been changed to ${data.role} and profile updated successfully.`
+          : "Your profile has been successfully updated.",
       });
 
       // Update local state
       setFullProfileData(prev => ({
         ...(prev as FullUserProfile),
         name: data.name,
+        role: data.role,
         bio: data.bio ?? null,
         website: data.website ?? null,
         twitter: data.twitter ?? null,
         linkedin: data.linkedin ?? null,
         profile_complete: true,
-        ...(fullProfileData?.role === 'coach' && {
+        ...(data.role === 'coach' && {
           hourly_rate: data.hourly_rate,
           expertise_areas: data.expertise_areas?.map(item => item.value).filter(Boolean),
           algorand_wallet: data.algorand_wallet,
           video_intro_url: data.video_intro_url,
         }),
-        ...(fullProfileData?.role === 'student' && {
+        ...(data.role === 'student' && {
           current_level: data.current_level as StudentLevel,
           learning_goals: data.learning_goals?.map(item => item.value).filter(Boolean),
           selected_path: data.selected_path,
         }),
       }));
+
+      // If role changed, refresh the page to ensure proper UI state
+      if (roleChanged) {
+        window.location.reload();
+      }
 
     } catch (error) {
       console.error('Error updating profile:', error);
@@ -676,24 +699,6 @@ export default function ProfilePage() {
             </p>
           </div>
 
-          {/* Role Display Section (Read-only) */}
-          <div className="mb-6 p-4 bg-muted rounded-lg">
-            <Label className="text-sm font-medium">Current Role</Label>
-            <div className="mt-2 flex items-center gap-2">
-              <Badge variant="secondary" className="capitalize">
-                {fullProfileData?.role || 'Not Set'}
-              </Badge>
-              <span className="text-sm text-muted-foreground">
-                {fullProfileData?.role === 'coach' ? 'Teach Trading' : 
-                 fullProfileData?.role === 'student' ? 'Learn Trading' : 
-                 'Role not assigned'}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              Role is assigned by administrators and cannot be changed here.
-            </p>
-          </div>
-
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               {/* Basic Profile Fields */}
@@ -715,6 +720,36 @@ export default function ProfilePage() {
                     </FormControl>
                     <FormDescription id="name-description">
                       Your full name as it will appear to other users
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Role Selection Section (Now Editable) */}
+              <FormField
+                control={form.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel htmlFor="profile-role">Role *</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value}
+                      name="role"
+                    >
+                      <FormControl>
+                        <SelectTrigger id="profile-role" aria-describedby="role-description">
+                          <SelectValue placeholder="Select your role" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="student">Student - Learn Trading</SelectItem>
+                        <SelectItem value="coach">Coach - Teach Trading</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription id="role-description">
+                      Choose whether you want to learn or teach trading. You can change this anytime.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -821,7 +856,7 @@ export default function ProfilePage() {
               />
 
               {/* Coach-specific fields */}
-              {fullProfileData?.role === "coach" && (
+              {form.watch("role") === "coach" && (
                 <>
                   <div className="border-t pt-6">
                     <h3 className="text-lg font-medium mb-4">Coach Information</h3>
@@ -959,7 +994,7 @@ export default function ProfilePage() {
               )}
 
               {/* Student-specific fields */}
-              {fullProfileData?.role === "student" && (
+              {form.watch("role") === "student" && (
                 <>
                   <div className="border-t pt-6">
                     <h3 className="text-lg font-medium mb-4">Student Information</h3>
@@ -973,7 +1008,7 @@ export default function ProfilePage() {
                             <FormLabel htmlFor="student-level">Current Trading Level</FormLabel>
                             <Select
                               onValueChange={field.onChange}
-                              defaultValue={field.value}
+                              value={field.value}
                               name="current_level"
                             >
                               <FormControl>

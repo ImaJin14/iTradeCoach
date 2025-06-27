@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
@@ -16,15 +17,18 @@ interface LearningStats {
   learningGoals: string[];
   selectedPath: string | null;
   selectedCoachId: string | null;
+  hasSubscription: boolean;
 }
 
 interface UserProfile {
   role: 'student' | 'coach' | 'admin';
+  subscription_status: string | null;
 }
 
 // Raw database type
 interface RawUserProfile {
   role: string | null;
+  subscription_status: string | null;
 }
 
 export default function LearnPage() {
@@ -32,6 +36,7 @@ export default function LearnPage() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchLearningData() {
@@ -42,10 +47,10 @@ export default function LearnPage() {
           throw new Error('Not authenticated');
         }
 
-        // First get the user's role
+        // First get the user's role and subscription status
         const { data: rawProfile, error: profileError } = await supabase
           .from('profiles')
-          .select('role')
+          .select('role, subscription_status')
           .eq('id', user.id)
           .single() as { data: RawUserProfile | null; error: any };
 
@@ -63,7 +68,8 @@ export default function LearnPage() {
         }
 
         const profile: UserProfile = {
-          role: rawProfile.role as 'student' | 'coach' | 'admin'
+          role: rawProfile.role as 'student' | 'coach' | 'admin',
+          subscription_status: rawProfile.subscription_status
         };
 
         setUserProfile(profile);
@@ -105,7 +111,8 @@ export default function LearnPage() {
                 tokensEarned: 0,
                 learningGoals: [],
                 selectedPath: null,
-                selectedCoachId: null
+                selectedCoachId: null,
+                hasSubscription: profile.subscription_status === 'active'
               });
             } else {
               throw studentError;
@@ -124,7 +131,8 @@ export default function LearnPage() {
               tokensEarned: studentProfile.tokens_earned || 0,
               learningGoals: studentProfile.learning_goals || [],
               selectedPath: studentProfile.selected_path,
-              selectedCoachId: studentProfile.selected_coach_id
+              selectedCoachId: studentProfile.selected_coach_id,
+              hasSubscription: profile.subscription_status === 'active'
             });
           }
         }
@@ -142,6 +150,21 @@ export default function LearnPage() {
 
     fetchLearningData();
   }, [toast]);
+
+  // Handle learning path selection
+  const handlePathAction = (pathLevel: string, isCurrentPath: boolean) => {
+    if (stats?.hasSubscription) {
+      // Redirect to classroom for subscribed users
+      router.push('/classroom');
+    } else {
+      // For non-subscribed users, redirect to pricing or coach selection
+      if (isCurrentPath) {
+        router.push('/coaches'); // Continue with current coach
+      } else {
+        router.push('/pricing'); // Show pricing for new path
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -184,20 +207,20 @@ export default function LearnPage() {
           {[
             {
               title: "Beginner",
-              description: "Master the fundamentals of cryptocurrency and blockchain technology",
-              topics: ["Crypto Basics", "Wallet Setup", "Exchange Trading", "Security Fundamentals"],
+              description: "Master the fundamentals of Trading and Crypto",
+              topics: ["Basics(Forex Snd Crypto)",  "Trading Sessions(Forex)", "Lot Sizing(Forex)", "Leveraging(Crypto)", "Accounts setups", "Simple Market Structure"],
               color: "border-blue-500/20 bg-blue-500/5 hover:bg-blue-500/10",
             },
             {
               title: "Intermediate",
-              description: "Dive deeper into DeFi, NFTs, and investment strategies",
-              topics: ["DeFi Protocols", "Yield Farming", "NFT Marketplaces", "Technical Analysis"],
+              description: "Dive into investment strategies",
+              topics: ["Technical Analysis", "Risk Management", "Money Management", "Trade Management", "Basic Trading Strategies"],
               color: "border-teal-500/20 bg-teal-500/5 hover:bg-teal-500/10",
             },
             {
               title: "Advanced",
               description: "Explore complex topics like tokenomics, DAOs and development",
-              topics: ["Smart Contracts", "Tokenomics", "DAO Governance", "Market Analysis"],
+              topics: ["Advance Market Structure", "Trading Plan (including a tested strategy)", "Trading Psychology", "Spot Trading (Cryptocurrency)", "Others"],
               color: "border-violet-500/20 bg-violet-500/5 hover:bg-violet-500/10",
             }
           ].map((path, i) => (
@@ -289,6 +312,38 @@ export default function LearnPage() {
         </div>
       )}
 
+      {/* Subscription Status Banner */}
+      {stats && (
+        <div className={`border rounded-lg p-6 max-w-2xl mx-auto text-center ${
+          stats.hasSubscription 
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+            : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800'
+        }`}>
+          <h3 className={`font-semibold mb-2 ${
+            stats.hasSubscription 
+              ? 'text-green-900 dark:text-green-100' 
+              : 'text-yellow-900 dark:text-yellow-100'
+          }`}>
+            {stats.hasSubscription ? 'Premium Access Active' : 'Upgrade for Full Access'}
+          </h3>
+          <p className={`text-sm ${
+            stats.hasSubscription 
+              ? 'text-green-700 dark:text-green-300' 
+              : 'text-yellow-700 dark:text-yellow-300'
+          }`}>
+            {stats.hasSubscription 
+              ? 'You have access to all courses, live sessions, and premium features in the classroom.'
+              : 'Get unlimited access to all courses, live sessions, and 1-on-1 coaching with a premium subscription.'
+            }
+          </p>
+          {stats.hasSubscription && (
+            <Button asChild className="mt-4">
+              <Link href="/classroom">Go to Classroom</Link>
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Show selected path if exists */}
       {stats?.selectedPath && (
         <div className="bg-primary/10 border border-primary/20 rounded-lg p-6 max-w-2xl mx-auto text-center">
@@ -374,7 +429,11 @@ export default function LearnPage() {
               </ul>
             </CardContent>
             <CardFooter>
-              <Button className="w-full" variant={path.recommended ? "default" : "outline"}>
+              <Button 
+                className="w-full" 
+                variant={path.recommended ? "default" : "outline"}
+                onClick={() => handlePathAction(path.path, stats?.selectedPath === path.path)}
+              >
                 {stats?.selectedPath === path.path ? "Continue Learning" : "Start Learning"} 
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>

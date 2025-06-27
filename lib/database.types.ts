@@ -233,52 +233,74 @@ export type Database = {
         }
         Relationships: []
       }
-      chat_messages: {
+      chat_conversations: {
         Row: {
-          content: string
           created_at: string | null
           id: string
-          sender: string
-          session_id: string | null
+          last_message_at: string | null
+          message_count: number | null
+          title: string
+          updated_at: string | null
           user_id: string
         }
         Insert: {
-          content: string
           created_at?: string | null
           id?: string
-          sender: string
-          session_id?: string | null
+          last_message_at?: string | null
+          message_count?: number | null
+          title: string
+          updated_at?: string | null
           user_id: string
         }
         Update: {
-          content?: string
           created_at?: string | null
           id?: string
-          sender?: string
-          session_id?: string | null
+          last_message_at?: string | null
+          message_count?: number | null
+          title?: string
+          updated_at?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      chat_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string | null
+          id: string
+          model: string | null
+          sender: string
+          timestamp: string | null
+          topic: string | null
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string | null
+          id?: string
+          model?: string | null
+          sender: string
+          timestamp?: string | null
+          topic?: string | null
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string | null
+          id?: string
+          model?: string | null
+          sender?: string
+          timestamp?: string | null
+          topic?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "chat_messages_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "chat_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
             isOneToOne: false
-            referencedRelation: "profiles"
+            referencedRelation: "chat_conversations"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_messages_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_complete_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "chat_messages_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "user_learning_dashboard"
-            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -499,6 +521,89 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "student_progress"
             referencedColumns: ["student_id"]
+          },
+        ]
+      }
+      enrollments: {
+        Row: {
+          coach_id: string | null
+          course_id: number | null
+          enrolled_at: string | null
+          final_grade: string | null
+          id: string
+          progress: number | null
+          status: string | null
+          student_id: string | null
+        }
+        Insert: {
+          coach_id?: string | null
+          course_id?: number | null
+          enrolled_at?: string | null
+          final_grade?: string | null
+          id: string
+          progress?: number | null
+          status?: string | null
+          student_id?: string | null
+        }
+        Update: {
+          coach_id?: string | null
+          course_id?: number | null
+          enrolled_at?: string | null
+          final_grade?: string | null
+          id?: string
+          progress?: number | null
+          status?: string | null
+          student_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "enrollments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "user_learning_dashboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "enrollments_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "user_learning_dashboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -1180,6 +1285,79 @@ export type Database = {
           },
         ]
       }
+      student_coach_enrollments: {
+        Row: {
+          coach_id: string | null
+          enrolled_at: string | null
+          enrollment_type: string | null
+          id: string
+          notes: string | null
+          status: string | null
+          student_id: string | null
+        }
+        Insert: {
+          coach_id?: string | null
+          enrolled_at?: string | null
+          enrollment_type?: string | null
+          id?: string
+          notes?: string | null
+          status?: string | null
+          student_id?: string | null
+        }
+        Update: {
+          coach_id?: string | null
+          enrolled_at?: string | null
+          enrollment_type?: string | null
+          id?: string
+          notes?: string | null
+          status?: string | null
+          student_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_coach_enrollments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_coach_enrollments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_coach_enrollments_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "user_learning_dashboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "student_coach_enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_coach_enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_coach_enrollments_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "user_learning_dashboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       student_profiles: {
         Row: {
           courses_completed: string[] | null
@@ -1241,6 +1419,61 @@ export type Database = {
           },
         ]
       }
+      subscription_changes: {
+        Row: {
+          change_type: string
+          completed_at: string | null
+          created_at: string | null
+          from_plan: string | null
+          id: string
+          status: string | null
+          to_plan: string
+          user_id: string | null
+        }
+        Insert: {
+          change_type: string
+          completed_at?: string | null
+          created_at?: string | null
+          from_plan?: string | null
+          id?: string
+          status?: string | null
+          to_plan: string
+          user_id?: string | null
+        }
+        Update: {
+          change_type?: string
+          completed_at?: string | null
+          created_at?: string | null
+          from_plan?: string | null
+          id?: string
+          status?: string | null
+          to_plan?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_changes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_changes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscription_changes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_learning_dashboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       subscription_plans: {
         Row: {
           created_at: string | null
@@ -1281,8 +1514,8 @@ export type Database = {
         Row: {
           cancel_at_period_end: boolean | null
           created_at: string | null
-          current_period_end: string
-          current_period_start: string
+          current_period_end: string | null
+          current_period_start: string | null
           id: string
           plan_id: string | null
           prof_id: string | null
@@ -1292,8 +1525,8 @@ export type Database = {
         Insert: {
           cancel_at_period_end?: boolean | null
           created_at?: string | null
-          current_period_end: string
-          current_period_start: string
+          current_period_end?: string | null
+          current_period_start?: string | null
           id?: string
           plan_id?: string | null
           prof_id?: string | null
@@ -1303,8 +1536,8 @@ export type Database = {
         Update: {
           cancel_at_period_end?: boolean | null
           created_at?: string | null
-          current_period_end?: string
-          current_period_start?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
           id?: string
           plan_id?: string | null
           prof_id?: string | null
@@ -1376,41 +1609,50 @@ export type Database = {
         Row: {
           coach_id: string
           context_metadata: Json | null
-          conversation_id: string
+          conversation_id: string | null
           created_at: string | null
           daily_room_url: string | null
-          duration: number | null
+          duration_minutes: number | null
           ended_at: string | null
           id: string
           session_type: string
+          started_at: string | null
           status: string
           student_id: string
+          topic: string | null
+          updated_at: string | null
         }
         Insert: {
           coach_id: string
           context_metadata?: Json | null
-          conversation_id: string
+          conversation_id?: string | null
           created_at?: string | null
           daily_room_url?: string | null
-          duration?: number | null
+          duration_minutes?: number | null
           ended_at?: string | null
           id?: string
-          session_type?: string
+          session_type: string
+          started_at?: string | null
           status?: string
           student_id: string
+          topic?: string | null
+          updated_at?: string | null
         }
         Update: {
           coach_id?: string
           context_metadata?: Json | null
-          conversation_id?: string
+          conversation_id?: string | null
           created_at?: string | null
           daily_room_url?: string | null
-          duration?: number | null
+          duration_minutes?: number | null
           ended_at?: string | null
           id?: string
           session_type?: string
+          started_at?: string | null
           status?: string
           student_id?: string
+          topic?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -1590,13 +1832,19 @@ export type Database = {
         Row: {
           coach_id: string
           created_at: string
+          download_url: string | null
           error_message: string | null
+          generation_progress: string | null
+          hosted_url: string | null
           id: string
+          metadata: Json | null
           processing_duration: number | null
           question: string | null
           replica_type: string | null
           script_used: string | null
           status: string
+          status_details: string | null
+          stream_url: string | null
           student_id: string
           tavus_video_id: string
           template_id: string
@@ -1608,13 +1856,19 @@ export type Database = {
         Insert: {
           coach_id: string
           created_at?: string
+          download_url?: string | null
           error_message?: string | null
+          generation_progress?: string | null
+          hosted_url?: string | null
           id?: string
+          metadata?: Json | null
           processing_duration?: number | null
           question?: string | null
           replica_type?: string | null
           script_used?: string | null
           status?: string
+          status_details?: string | null
+          stream_url?: string | null
           student_id: string
           tavus_video_id: string
           template_id: string
@@ -1626,13 +1880,19 @@ export type Database = {
         Update: {
           coach_id?: string
           created_at?: string
+          download_url?: string | null
           error_message?: string | null
+          generation_progress?: string | null
+          hosted_url?: string | null
           id?: string
+          metadata?: Json | null
           processing_duration?: number | null
           question?: string | null
           replica_type?: string | null
           script_used?: string | null
           status?: string
+          status_details?: string | null
+          stream_url?: string | null
           student_id?: string
           tavus_video_id?: string
           template_id?: string
@@ -1892,7 +2152,7 @@ export type Database = {
       }
     }
     Enums: {
-      session_status: "scheduled" | "completed" | "cancelled"
+      session_status: "scheduled" | "completed" | "cancelled" | "in_progress"
       student_level: "beginner" | "intermediate" | "advanced"
       user_role: "student" | "coach" | "admin"
       verification_status: "pending" | "verified" | "rejected"
@@ -2014,7 +2274,7 @@ export const Constants = {
   },
   public: {
     Enums: {
-      session_status: ["scheduled", "completed", "cancelled"],
+      session_status: ["scheduled", "completed", "cancelled", "in_progress"],
       student_level: ["beginner", "intermediate", "advanced"],
       user_role: ["student", "coach", "admin"],
       verification_status: ["pending", "verified", "rejected"],

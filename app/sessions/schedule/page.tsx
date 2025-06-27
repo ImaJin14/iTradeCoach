@@ -333,86 +333,126 @@ export default function ScheduleSessionPage() {
   }
 
   async function onSubmit(data: SessionFormValues) {
-    if (!currentUser) return;
+  if (!currentUser) return;
 
-    setSaving(true);
-    try {
-      // Create live session with proper field mapping
-      const { data: session, error: sessionError } = await supabase
-        .from('live_sessions')
-        .insert({
-          title: data.title,
-          description: data.description,
-          learning_path: data.learning_path,
-          scheduled_time: new Date(data.scheduled_time).toISOString(),
-          duration: parseInt(data.duration),
-          max_participants: parseInt(data.max_participants),
-          price: parseFloat(data.price),
-          coach_id: currentUser.id,
-          status: 'scheduled',
-          current_participants: 0,
-          // Note: created_at and updated_at are handled by database defaults/triggers
-        })
-        .select()
-        .single();
+  setSaving(true);
+  try {
+    console.log('Attempting to create session with data:', {
+      title: data.title,
+      description: data.description,
+      learning_path: data.learning_path,
+      scheduled_time: new Date(data.scheduled_time).toISOString(),
+      duration: parseInt(data.duration),
+      max_participants: parseInt(data.max_participants),
+      price: parseFloat(data.price),
+      coach_id: currentUser.id,
+      status: 'scheduled',
+      current_participants: 0,
+    });
 
-      if (sessionError) {
-        console.error('Session creation error:', sessionError);
-        throw sessionError;
-      }
+    // Create live session with better error handling
+    const { data: session, error: sessionError } = await supabase
+      .from('live_sessions')
+      .insert({
+        title: data.title,
+        description: data.description,
+        learning_path: data.learning_path,
+        scheduled_time: new Date(data.scheduled_time).toISOString(),
+        duration: parseInt(data.duration),
+        max_participants: parseInt(data.max_participants),
+        price: parseFloat(data.price),
+        coach_id: currentUser.id,
+        status: 'scheduled',
+        current_participants: 0,
+      })
+      .select()
+      .single();
 
-      // If specific students are selected, create enrollments
-      if (data.selected_students && data.selected_students.length > 0) {
-        const enrollments = data.selected_students.map(studentId => ({
-          session_id: session.id,
-          student_id: studentId,
-          status: 'enrolled'
-          // Note: enrolled_at, created_at, updated_at are handled by database defaults/triggers
-        }));
-
-        const { error: enrollmentError } = await supabase
-          .from('session_enrollments')
-          .insert(enrollments);
-
-        if (enrollmentError) {
-          console.error('Enrollment creation error:', enrollmentError);
-          throw enrollmentError;
-        }
-
-        // Update current participants count
-        const { error: updateError } = await supabase
-          .from('live_sessions')
-          .update({ 
-            current_participants: data.selected_students.length,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', session.id);
-
-        if (updateError) {
-          console.error('Participant count update error:', updateError);
-          throw updateError;
-        }
-      }
-
-      toast({
-        title: "Session Scheduled",
-        description: "Your live session has been scheduled successfully.",
+    if (sessionError) {
+      console.error('Session creation error details:', {
+        message: sessionError.message,
+        details: sessionError.details,
+        hint: sessionError.hint,
+        code: sessionError.code,
+        fullError: sessionError
       });
-
-      setIsDialogOpen(false);
-      form.reset();
-      await fetchLiveSessions(currentUser.id);
-    } catch (error: any) {
-      console.error('Error creating session:', error);
-      toast({
-        title: "Error",
-        description: "Failed to schedule session. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setSaving(false);
+      throw new Error(`Session creation failed: ${sessionError.message || 'Unknown error'}`);
     }
+
+    console.log('Session created successfully:', session);
+
+    // Enhanced enrollment error handling
+    if (data.selected_students && data.selected_students.length > 0) {
+      const enrollments = data.selected_students.map(studentId => ({
+        session_id: session.id,
+        student_id: studentId,
+        status: 'enrolled'
+      }));
+
+      console.log('Creating enrollments:', enrollments);
+
+      const { error: enrollmentError } = await supabase
+        .from('session_enrollments')
+        .insert(enrollments);
+
+      if (enrollmentError) {
+        console.error('Enrollment error details:', {
+          message: enrollmentError.message,
+          details: enrollmentError.details,
+          hint: enrollmentError.hint,
+          code: enrollmentError.code,
+          fullError: enrollmentError
+        });
+        throw new Error(`Enrollment creation failed: ${enrollmentError.message || 'Unknown error'}`);
+      }
+
+      // Update participants count
+      const { error: updateError } = await supabase
+        .from('live_sessions')
+        .update({ 
+          current_participants: data.selected_students.length,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', session.id);
+
+      if (updateError) {
+        console.error('Update error details:', {
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+          code: updateError.code,
+          fullError: updateError
+        });
+        throw new Error(`Participant count update failed: ${updateError.message || 'Unknown error'}`);
+      }
+    }
+
+    toast({
+      title: "Session Scheduled",
+      description: "Your live session has been scheduled successfully.",
+    });
+
+    setIsDialogOpen(false);
+    form.reset();
+    await fetchLiveSessions(currentUser.id);
+  } catch (error: any) {
+    console.error('Complete error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      cause: error.cause,
+      fullError: error
+    });
+    
+    toast({
+      title: "Error",
+      description: error.message || "Failed to schedule session. Please try again.",
+      variant: "destructive",
+    });
+  } finally {
+    setSaving(false);
   }
+}
 
   const getNextWeekDates = () => {
     const dates = [];

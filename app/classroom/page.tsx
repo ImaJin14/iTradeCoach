@@ -47,7 +47,7 @@ interface Session {
   coach_name: string;
   coach_avatar: string | null;
   student_count: number;
-  status: 'scheduled' | 'completed' | 'cancelled' | null;
+  status: 'scheduled' | 'completed' | 'cancelled' | 'in_progress' | null;
   type: string;
   level: string;
   notes?: string;

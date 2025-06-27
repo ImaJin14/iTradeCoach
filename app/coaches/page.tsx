@@ -33,7 +33,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// Fixed: Removed duplicates and made unique
 const allExpertiseAreas = [
   "DeFi", "NFTs", "Trading", "Technical Analysis", "Risk Management", "Security", 
   "Market Analysis", "Portfolio Management", "DAOs", "Investing", 
@@ -41,21 +40,16 @@ const allExpertiseAreas = [
 ];
 
 interface CoachData {
-  coach_id: string;
+  id: string;
+  name: string | null;
+  email: string | null;
+  bio: string | null;
+  avatar_url: string | null;
   expertise_areas: string[] | null;
   hourly_rate: number | null;
   rating: number | null;
   total_students: number | null;
   verification_status: "pending" | "verified" | "rejected" | null;
-  user_profiles: {
-    prof_id: string;
-    bio: string | null;
-    avatar_url: string | null;
-  } | null;
-  profiles: {
-    name: string | null;
-    email: string | null;
-  } | null;
 }
 
 export default function CoachesPage() {
@@ -66,96 +60,82 @@ export default function CoachesPage() {
   const [selectedExpertise, setSelectedExpertise] = useState<string[]>([]);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [sortOption, setSortOption] = useState("rating-desc");
-  const [availability, setAvailability] = useState<string | null>(null);
   
   useEffect(() => {
     fetchCoaches();
   }, []);
 
- async function fetchCoaches() {
-  try {
-    // Step 1: Fetch coach_profiles data
-    const { data: coachProfilesData, error: coachProfilesError } = await supabase
-      .from('coach_profiles')
-      .select(`
-        coach_id,
-        expertise_areas,
-        hourly_rate,
-        rating,
-        total_students,
-        verification_status
-      `)
-      .eq('verification_status', 'verified');
+  async function fetchCoaches() {
+    try {
+      // Step 1: Get all verified coaches from coach_profiles
+      const { data: coachProfiles, error: coachError } = await supabase
+        .from('coach_profiles')
+        .select('coach_id, expertise_areas, hourly_rate, rating, total_students, verification_status')
+        .eq('verification_status', 'verified');
 
-    if (coachProfilesError) {
-      console.error('Supabase error fetching coach profiles:', coachProfilesError);
-      throw coachProfilesError;
-    }
+      if (coachError) {
+        console.error('Error fetching coach profiles:', coachError);
+        throw coachError;
+      }
 
-    // Filter out null coach_ids and create array of strings
-    const coachIds = coachProfilesData?.map(coach => coach.coach_id).filter((id): id is string => id !== null) || [];
+      if (!coachProfiles || coachProfiles.length === 0) {
+        setCoaches([]);
+        return;
+      }
 
-    // Step 2: Fetch additional profile (name, email) and user profile (avatar, bio, etc.) data separately
-    const [profilesResult, userProfilesResult] = await Promise.all([
-      supabase
+      // Step 2: Get coach IDs
+      const coachIds = coachProfiles.map(cp => cp.coach_id);
+
+      // Step 3: Get basic profile info
+      const { data: profiles, error: profileError } = await supabase
         .from('profiles')
         .select('id, name, email')
-        .in('id', coachIds),
-      supabase
+        .in('id', coachIds)
+        .eq('role', 'coach');
+
+      if (profileError) {
+        console.error('Error fetching profiles:', profileError);
+        throw profileError;
+      }
+
+      // Step 4: Get user profile info for bio and avatar
+      const { data: userProfiles, error: userProfileError } = await supabase
         .from('user_profiles')
-        .select('prof_id, avatar_url, bio') // Only select necessary fields
-        .in('prof_id', coachIds)
-    ]);
+        .select('prof_id, bio, avatar_url')
+        .in('prof_id', coachIds);
 
-    if (profilesResult.error) throw profilesResult.error;
-    if (userProfilesResult.error) throw userProfilesResult.error;
+      if (userProfileError) {
+        console.error('Error fetching user profiles:', userProfileError);
+        throw userProfileError;
+      }
 
-    // Step 3: Create lookup maps for efficient merging
-    const profilesMap = profilesResult.data?.reduce((acc, profile) => {
-      acc[profile.id] = profile;
-      return acc;
-    }, {} as Record<string, any>) || {};
+      // Step 5: Combine all the data
+      const combinedCoaches: CoachData[] = coachProfiles.map(coachProfile => {
+        const profile = profiles?.find(p => p.id === coachProfile.coach_id);
+        const userProfile = userProfiles?.find(up => up.prof_id === coachProfile.coach_id);
 
-    const userProfilesMap = userProfilesResult.data?.reduce((acc, userProfile) => {
-      acc[userProfile.prof_id] = userProfile;
-      return acc;
-    }, {} as Record<string, any>) || {};
+        return {
+          id: coachProfile.coach_id,
+          name: profile?.name || null,
+          email: profile?.email || null,
+          bio: userProfile?.bio || null,
+          avatar_url: userProfile?.avatar_url || null,
+          expertise_areas: coachProfile.expertise_areas || [],
+          hourly_rate: coachProfile.hourly_rate || 0,
+          rating: coachProfile.rating || 0,
+          total_students: coachProfile.total_students || 0,
+          verification_status: coachProfile.verification_status || 'pending',
+        };
+      }).filter(coach => coach.name); // Filter out coaches without profile data
 
-    // Step 4: Transform and combine the data
-    const transformedCoaches = coachProfilesData?.map(coachProfile => {
-      const profile = profilesMap[coachProfile.coach_id];
-      const userProfile = userProfilesMap[coachProfile.coach_id];
-      
-      return {
-        coach_id: coachProfile.coach_id,
-        expertise_areas: coachProfile.expertise_areas,
-        hourly_rate: coachProfile.hourly_rate,
-        rating: coachProfile.rating,
-        total_students: coachProfile.total_students,
-        verification_status: coachProfile.verification_status,
-        user_profiles: userProfile ? {
-          prof_id: userProfile.prof_id,
-          bio: userProfile.bio,
-          avatar_url: userProfile.avatar_url
-        } : null,
-        profiles: profile ? {
-          name: profile.name,
-          email: profile.email
-        } : null,
-      };
-    }) || [];
-
-    setCoaches(transformedCoaches);
-  } catch (error: any) {
-    console.error('Error fetching coaches:', error);
-    // Keep coaches as empty array on error
-    setCoaches([]);
-  } finally {
-    setLoading(false);
+      setCoaches(combinedCoaches);
+    } catch (error: any) {
+      console.error('Error fetching coaches:', error);
+      setCoaches([]);
+    } finally {
+      setLoading(false);
+    }
   }
-}
-
-
   
   // Filter coaches based on search and filters
   const filteredCoaches = coaches
@@ -164,8 +144,8 @@ export default function CoachesPage() {
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         return (
-          coach.profiles?.name?.toLowerCase().includes(query) ||
-          coach.user_profiles?.bio?.toLowerCase().includes(query) ||
+          coach.name?.toLowerCase().includes(query) ||
+          coach.bio?.toLowerCase().includes(query) ||
           coach.expertise_areas?.some(area => area.toLowerCase().includes(query))
         );
       }
@@ -412,27 +392,32 @@ export default function CoachesPage() {
           {filteredCoaches.length === 0 ? (
             <div className="text-center py-12 border rounded-lg bg-muted/30">
               <h3 className="font-medium text-lg mb-2">No coaches found</h3>
-              <p className="text-muted-foreground">Try adjusting your filters or search query</p>
+              <p className="text-muted-foreground">
+                {coaches.length === 0 
+                  ? "No verified coaches available at the moment." 
+                  : "Try adjusting your filters or search query"
+                }
+              </p>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {filteredCoaches.map((coach) => (
-                <Card key={coach.coach_id} className="overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
+                <Card key={coach.id} className="overflow-hidden flex flex-col h-full transition-shadow hover:shadow-md">
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar className="h-12 w-12 border-2 border-muted">
                           <AvatarImage 
-                            src={coach.user_profiles?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.coach_id}`} 
-                            alt={coach.profiles?.name || 'Coach'} 
+                            src={coach.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${coach.id}`} 
+                            alt={coach.name || 'Coach'} 
                           />
                           <AvatarFallback>
-                            {coach.profiles?.name?.substring(0, 2) || 'CO'}
+                            {coach.name?.substring(0, 2) || 'CO'}
                           </AvatarFallback>
                         </Avatar>
                         <div>
                           <CardTitle className="text-lg">
-                            {coach.profiles?.name || 'Unknown Coach'}
+                            {coach.name || 'Unknown Coach'}
                           </CardTitle>
                           <div className="flex items-center mt-1">
                             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400 mr-1" />
@@ -446,21 +431,23 @@ export default function CoachesPage() {
                   </CardHeader>
                   <CardContent className="py-2 flex-grow">
                     <p className="text-sm text-muted-foreground line-clamp-3 mb-3">
-                      {coach.user_profiles?.bio || 'No bio available'}
+                      {coach.bio || 'No bio available'}
                     </p>
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {coach.expertise_areas?.map((tag, index) => (
-                        <Badge key={`${coach.coach_id}-${tag}-${index}`} variant="secondary" className="text-xs">
-                          {tag}
-                        </Badge>
-                      )) || (
+                      {coach.expertise_areas && coach.expertise_areas.length > 0 ? (
+                        coach.expertise_areas.map((tag, index) => (
+                          <Badge key={`${coach.id}-${tag}-${index}`} variant="secondary" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))
+                      ) : (
                         <span className="text-xs text-muted-foreground">No expertise areas listed</span>
                       )}
                     </div>
                   </CardContent>
                   <CardFooter className="pt-2">
                     <Button asChild className="w-full">
-                      <Link href={`/coaches/${coach.coach_id}`}>View Profile</Link>
+                      <Link href={`/coaches/${coach.id}`}>View Profile</Link>
                     </Button>
                   </CardFooter>
                 </Card>
