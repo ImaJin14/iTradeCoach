@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowRight, Users, MessageSquare, Trophy, Star, Calendar, Award, ExternalLink } from "lucide-react";
+import { ArrowRight, Users, MessageSquare, Trophy, Star, Calendar, Award, ExternalLink, Gamepad2, TrendingUp, Puzzle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 
@@ -56,6 +59,34 @@ interface Coach {
   total_students: number;
 }
 
+interface GameStats {
+  dailyPlayers: number;
+  totalGames: number;
+  currentLeader: string;
+  activeChallenges: number;
+}
+
+interface PredictionGame {
+  id: string;
+  date: string;
+  question: string;
+  options: string[];
+  predictions: number[];
+  timeLeft: string;
+  status: 'active' | 'closed';
+}
+
+interface StrategyPuzzle {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  completionRate: number;
+  attempts: number;
+  topScore: number;
+  reward: string;
+}
+
 const REDDIT_COMMUNITY_URL = "https://reddit.com/r/iTradeCoach";
 
 export default function CommunityPage() {
@@ -63,6 +94,10 @@ export default function CommunityPage() {
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
   const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
   const [topCoaches, setTopCoaches] = useState<Coach[]>([]);
+  const [gameStats, setGameStats] = useState<GameStats | null>(null);
+  const [predictionGames, setPredictionGames] = useState<PredictionGame[]>([]);
+  const [strategyPuzzles, setStrategyPuzzles] = useState<StrategyPuzzle[]>([]);
+  const [userPrediction, setUserPrediction] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
@@ -93,6 +128,7 @@ export default function CommunityPage() {
         await fetchBlogPosts();
         await fetchLiveSessions();
         await fetchTopCoaches();
+        await fetchGameData();
 
       } catch (error: any) {
         console.error('Error fetching community data:', error);
@@ -315,8 +351,142 @@ export default function CommunityPage() {
       }
     }
 
+    async function fetchGameData() {
+      try {
+        // Mock data for demonstration - replace with actual Reddit API calls
+        setGameStats({
+          dailyPlayers: 247,
+          totalGames: 1580,
+          currentLeader: "TradeMaster_Pro",
+          activeChallenges: 3
+        });
+
+        setPredictionGames([
+          {
+            id: "pred_1",
+            date: "2025-06-28",
+            question: "Will SPY close above $550 today?",
+            options: ["Yes, above $550", "No, below $550"],
+            predictions: [142, 89],
+            timeLeft: "2h 15m",
+            status: 'active'
+          },
+          {
+            id: "pred_2", 
+            date: "2025-06-28",
+            question: "Which sector will outperform today?",
+            options: ["Tech", "Healthcare", "Energy", "Finance"],
+            predictions: [67, 45, 32, 87],
+            timeLeft: "2h 15m", 
+            status: 'active'
+          },
+          {
+            id: "pred_3", 
+            date: "2025-06-27",
+            question: "Will Bitcoin break $100k this week?",
+            options: ["Yes, definitely", "No, not yet", "Maybe by Friday"],
+            predictions: [89, 156, 78],
+            timeLeft: "Closed", 
+            status: 'closed'
+          }
+        ]);
+
+        setStrategyPuzzles([
+          {
+            id: "puzzle_1",
+            title: "The Bull Run Dilemma",
+            description: "You have $10k and 3 stocks showing momentum. What's your optimal allocation strategy?",
+            difficulty: 'medium',
+            completionRate: 67,
+            attempts: 234,
+            topScore: 95,
+            reward: "50 XP + Strategy Badge"
+          },
+          {
+            id: "puzzle_2", 
+            title: "Risk Management Crisis",
+            description: "Your portfolio is down 15% in a volatile market. Plan your next 5 moves.",
+            difficulty: 'hard',
+            completionRate: 23,
+            attempts: 156,
+            topScore: 88,
+            reward: "100 XP + Risk Master Badge"
+          },
+          {
+            id: "puzzle_3",
+            title: "Options Play Optimizer", 
+            description: "Given market conditions, find the best options strategy for maximum profit.",
+            difficulty: 'easy',
+            completionRate: 84,
+            attempts: 445,
+            topScore: 92,
+            reward: "25 XP + Options Badge"
+          },
+          {
+            id: "puzzle_4",
+            title: "Earnings Season Strategy",
+            description: "Navigate earnings announcements for 5 major tech stocks this week.",
+            difficulty: 'medium',
+            completionRate: 56,
+            attempts: 189,
+            topScore: 91,
+            reward: "75 XP + Earnings Pro Badge"
+          },
+          {
+            id: "puzzle_5",
+            title: "Market Crash Simulation",
+            description: "The market drops 20% in one day. Protect your $100k portfolio.",
+            difficulty: 'hard',
+            completionRate: 18,
+            attempts: 267,
+            topScore: 85,
+            reward: "150 XP + Crisis Manager Badge"
+          },
+          {
+            id: "puzzle_6",
+            title: "Day Trading Challenge",
+            description: "Make profitable trades within market hours using only technical analysis.",
+            difficulty: 'medium',
+            completionRate: 41,
+            attempts: 298,
+            topScore: 89,
+            reward: "60 XP + Day Trader Badge"
+          }
+        ]);
+
+      } catch (error) {
+        console.error('Error fetching game data:', error);
+      }
+    }
+
     fetchCommunityData();
   }, [toast]);
+
+  const handlePredictionSubmit = async (gameId: string, prediction: string) => {
+    try {
+      // This would integrate with Reddit's Developer Platform API
+      // For now, showing mock implementation
+      console.log(`Submitting prediction for ${gameId}: ${prediction}`);
+      
+      toast({
+        title: "Prediction Submitted!",
+        description: "Your prediction has been recorded. Results will be revealed at market close.",
+      });
+      
+      setUserPrediction('');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to submit prediction. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const launchPuzzle = (puzzleId: string) => {
+    // This would open the Reddit Developer Platform game interface
+    window.open(`${REDDIT_COMMUNITY_URL}/posts/puzzle_${puzzleId}`, '_blank');
+  };
 
   if (loading) {
     return (
@@ -341,7 +511,6 @@ export default function CommunityPage() {
           </a>
         </Button>
       </div>
-
 
       {stats && (
         <div className="grid gap-8 md:grid-cols-4 max-w-5xl mx-auto">
@@ -375,7 +544,6 @@ export default function CommunityPage() {
               <CardHeader>
                 <stat.icon className="h-8 w-8 text-primary mb-4" />
                 <CardTitle className="text-2xl">{stat.value}</CardTitle>
-                {/* Fix: Use span elements instead of div inside CardDescription */}
                 <CardDescription className="space-y-1">
                   <span className="block font-medium text-foreground">{stat.title}</span>
                   <span className="block text-sm text-muted-foreground">{stat.description}</span>
@@ -387,10 +555,14 @@ export default function CommunityPage() {
       )}
 
       <Tabs defaultValue="blog" className="max-w-5xl mx-auto">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="blog">Latest Posts</TabsTrigger>
           <TabsTrigger value="sessions">Live Sessions</TabsTrigger>
           <TabsTrigger value="coaches">Top Coaches</TabsTrigger>
+          <TabsTrigger value="games" className="flex items-center gap-2">
+            <Gamepad2 className="h-4 w-4" />
+            Games
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="blog" className="mt-6">
@@ -526,6 +698,46 @@ export default function CommunityPage() {
                 No coaches available
               </div>
             )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="games" className="mt-6">
+          <div className="text-center py-16 space-y-6">
+            <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-6">
+              <Gamepad2 className="h-12 w-12 text-muted-foreground" />
+            </div>
+            <h3 className="text-2xl font-bold">Trading Games Coming Soon!</h3>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Get ready for interactive trading challenges, prediction games, and strategy puzzles. 
+              Test your skills, compete with other traders, and earn rewards while learning.
+            </p>
+            <div className="grid md:grid-cols-3 gap-4 max-w-4xl mx-auto mt-8">
+              <Card className="p-6 text-center">
+                <TrendingUp className="h-8 w-8 text-primary mx-auto mb-3" />
+                <h4 className="font-medium mb-2">Market Predictions</h4>
+                <p className="text-sm text-muted-foreground">
+                  Predict market movements and compete for accuracy
+                </p>
+              </Card>
+              <Card className="p-6 text-center">
+                <Puzzle className="h-8 w-8 text-primary mx-auto mb-3" />
+                <h4 className="font-medium mb-2">Strategy Puzzles</h4>
+                <p className="text-sm text-muted-foreground">
+                  Solve complex trading scenarios and earn badges
+                </p>
+              </Card>
+              <Card className="p-6 text-center">
+                <Trophy className="h-8 w-8 text-primary mx-auto mb-3" />
+                <h4 className="font-medium mb-2">Leaderboards</h4>
+                <p className="text-sm text-muted-foreground">
+                  Climb the ranks and showcase your trading skills
+                </p>
+              </Card>
+            </div>
+            <Button size="lg" variant="outline" disabled>
+              <Calendar className="mr-2 h-4 w-4" />
+              Launching Soon
+            </Button>
           </div>
         </TabsContent>
       </Tabs>

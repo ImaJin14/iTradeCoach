@@ -70,7 +70,7 @@ export default function FAQPage() {
         </p>
         <div className="flex justify-center gap-4">
           <a href="mailto:support@itradecoach.com" className="text-primary hover:underline">
-            support@itradecoach.com
+            support@itradecoach.online
           </a>
         </div>
       </div>
