@@ -104,6 +104,20 @@ export default function AdminDashboard() {
     fetchAdminData();
   }, []);
 
+  // Helper function to get the correct profile URL based on user role
+  const getProfileUrl = (userId: string, role: string) => {
+    switch (role) {
+      case 'coach':
+        return `/coaches/${userId}`;
+      case 'student':
+        return `/students/${userId}`;
+      case 'admin':
+        return `/admin/users/${userId}`;
+      default:
+        return `/users/${userId}`;
+    }
+  };
+
   async function fetchAdminData() {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -693,14 +707,6 @@ export default function AdminDashboard() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => viewUserProfile(coach.id)}
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View Profile
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
                               onClick={() => handleVerifyUser(coach.id, 'coach', 'verified')}
                               disabled={verifyingUser === coach.id}
                               className="text-green-600 hover:text-green-700 hover:bg-green-50"
@@ -771,7 +777,17 @@ export default function AdminDashboard() {
                               onClick={() => viewUserProfile(student.id)}
                             >
                               <Eye className="h-4 w-4 mr-1" />
-                              View Profile
+                              View Details
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              asChild
+                            >
+                              <Link href={getProfileUrl(student.id, 'student')}>
+                                <Eye className="h-4 w-4 mr-1" />
+                                View Profile
+                              </Link>
                             </Button>
                             <Button
                               variant="outline"
@@ -851,7 +867,14 @@ export default function AdminDashboard() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onClick={() => viewUserProfile(user.id)}>
                               <Eye className="h-4 w-4 mr-2" />
-                              View Profile
+                              View Details
+                            </DropdownMenuItem>
+                            
+                            <DropdownMenuItem asChild>
+                              <Link href={getProfileUrl(user.id, user.role)}>
+                                <Eye className="h-4 w-4 mr-2" />
+                                View Profile
+                              </Link>
                             </DropdownMenuItem>
                             
                             {/* Show verification options for users with pending status */}
@@ -923,6 +946,15 @@ export default function AdminDashboard() {
                     <Badge variant={userDetailsModal.user.profile_complete ? 'default' : 'outline'}>
                       {userDetailsModal.user.profile_complete ? 'Complete Profile' : 'Incomplete Profile'}
                     </Badge>
+                  </div>
+                  {/* Add external profile link */}
+                  <div className="mt-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={getProfileUrl(userDetailsModal.user.id, userDetailsModal.user.role)}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        View Public Profile
+                      </Link>
+                    </Button>
                   </div>
                 </div>
               </div>

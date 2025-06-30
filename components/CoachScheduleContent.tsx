@@ -189,52 +189,84 @@ export default function CoachScheduleContent({ coachId }: CoachScheduleContentPr
 
   async function fetchCoachProfile(id: string) {
     try {
-      // First get coach profile
-      const { data: coachData, error: coachError } = await supabase
-        .from('coach_profiles')
-        .select('*')
-        .eq('coach_id', id)
-        .eq('verification_status', 'verified')
-        .single();
-
-      if (coachError) throw coachError;
-
-      // Then get user profile data
-      const { data: userProfileData, error: userProfileError } = await supabase
-        .from('user_profiles')
-        .select('bio, avatar_url')
-        .eq('prof_id', id)
-        .single();
-
-      if (userProfileError) throw userProfileError;
-
-      // Finally get basic profile data
+      console.log('Fetching coach profile for ID:', id);
+      
+      // Step 1: Get basic profile data
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select('id, name, email')
         .eq('id', id)
         .single();
 
-      if (profileError) throw profileError;
+      console.log('Profile data:', profileData, 'Profile error:', profileError);
 
-      // Map the data correctly with null safety
-      setCoach({
-        id: coachData.coach_id,
+      if (profileError) {
+        console.error('Error fetching basic profile:', profileError);
+        throw new Error(`Profile not found: ${profileError.message}`);
+      }
+
+      if (!profileData) {
+        throw new Error('Coach profile not found');
+      }
+
+      // Step 2: Get user profile data (optional)
+      const { data: userProfileData, error: userProfileError } = await supabase
+        .from('user_profiles')
+        .select('bio, avatar_url')
+        .eq('prof_id', id)
+        .maybeSingle();
+
+      console.log('User profile data:', userProfileData, 'User profile error:', userProfileError);
+
+      // Step 3: Get coach-specific data
+      const { data: coachData, error: coachError } = await supabase
+        .from('coach_profiles')
+        .select('*')
+        .eq('coach_id', id)
+        .single();
+
+      console.log('Coach data:', coachData, 'Coach error:', coachError);
+
+      if (coachError) {
+        console.error('Error fetching coach profile:', coachError);
+        throw new Error(`Coach profile not found: ${coachError.message}`);
+      }
+
+      if (!coachData) {
+        throw new Error('Coach profile not found');
+      }
+
+      // Check if coach is verified
+      if (coachData.verification_status !== 'verified') {
+        throw new Error('Coach is not verified');
+      }
+
+      // Combine all data
+      const combinedCoach: CoachProfile = {
+        id: profileData.id,
         name: profileData.name || 'Unknown',
         email: profileData.email || '',
-        avatar_url: userProfileData.avatar_url,
-        bio: userProfileData.bio,
+        avatar_url: userProfileData?.avatar_url || null,
+        bio: userProfileData?.bio || null,
         expertise_areas: coachData.expertise_areas || [],
         hourly_rate: coachData.hourly_rate || 0,
         rating: coachData.rating || 0,
         total_students: coachData.total_students || 0,
         verification_status: coachData.verification_status || 'pending',
-      });
+      };
+
+      console.log('Final combined coach profile:', combinedCoach);
+      setCoach(combinedCoach);
     } catch (error: any) {
-      console.error('Error fetching coach profile:', error);
+      console.error('Error in fetchCoachProfile:', {
+        message: error.message,
+        stack: error.stack,
+        coachId: id,
+        error: error
+      });
       toast({
         title: "Error",
-        description: "Coach not found or not verified.",
+        description: error.message || "Coach not found or not verified.",
         variant: "destructive",
       });
       router.push('/coaches');
@@ -243,6 +275,8 @@ export default function CoachScheduleContent({ coachId }: CoachScheduleContentPr
 
   async function fetchCoachAvailability(id: string) {
     try {
+      console.log('Fetching availability for coach:', id);
+      
       const { data, error } = await supabase
         .from('coach_availability')
         .select('*')
@@ -251,15 +285,25 @@ export default function CoachScheduleContent({ coachId }: CoachScheduleContentPr
         .order('day_of_week')
         .order('start_time');
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching availability:', error);
+        // Don't throw here, just log the error and continue with empty availability
+        setAvailability([]);
+        return;
+      }
+
+      console.log('Availability data:', data);
       setAvailability(data || []);
     } catch (error: any) {
       console.error('Error fetching availability:', error);
+      setAvailability([]);
     }
   }
 
   async function fetchSessionRequests(studentId: string, coachIdParam: string) {
     try {
+      console.log('Fetching session requests for student:', studentId, 'coach:', coachIdParam);
+      
       // Get session requests
       const { data: requestsData, error: requestsError } = await supabase
         .from('session_requests')
@@ -268,23 +312,34 @@ export default function CoachScheduleContent({ coachId }: CoachScheduleContentPr
         .eq('coach_id', coachIdParam)
         .order('created_at', { ascending: false });
 
-      if (requestsError) throw requestsError;
+      if (requestsError) {
+        console.error('Error fetching session requests:', requestsError);
+        // Don't throw here, just log the error and continue with empty requests
+        setSessionRequests([]);
+        return;
+      }
+
+      if (!requestsData || requestsData.length === 0) {
+        console.log('No session requests found');
+        setSessionRequests([]);
+        return;
+      }
 
       // Get student profile data for the student name and avatar
       const { data: studentProfileData, error: studentProfileError } = await supabase
         .from('user_profiles')
         .select('avatar_url')
         .eq('prof_id', studentId)
-        .single();
+        .maybeSingle();
 
       const { data: studentBasicData, error: studentBasicError } = await supabase
         .from('profiles')
         .select('name')
         .eq('id', studentId)
-        .single();
+        .maybeSingle();
 
       // Map the response correctly with fallbacks
-      const mappedRequests = requestsData?.map(request => ({
+      const mappedRequests = requestsData.map(request => ({
         id: request.id,
         student_id: request.student_id,
         coach_id: request.coach_id,
@@ -301,8 +356,9 @@ export default function CoachScheduleContent({ coachId }: CoachScheduleContentPr
           name: studentBasicData?.name || 'Unknown',
           avatar_url: studentProfileData?.avatar_url || null
         }
-      })) || [];
+      }));
       
+      console.log('Mapped session requests:', mappedRequests);
       setSessionRequests(mappedRequests);
     } catch (error: any) {
       console.error('Error fetching session requests:', error);
@@ -311,6 +367,7 @@ export default function CoachScheduleContent({ coachId }: CoachScheduleContentPr
         description: "Failed to load session requests.",
         variant: "destructive",
       });
+      setSessionRequests([]);
     }
   }
 
