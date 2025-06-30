@@ -1,4 +1,3 @@
-
 export type Json =
   | string
   | number
@@ -35,6 +34,64 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_profiles: {
+        Row: {
+          access_level: string | null
+          admin_id: string
+          created_at: string | null
+          department: string | null
+          is_super_admin: boolean | null
+          last_login: string | null
+          notes: string | null
+          permissions: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          access_level?: string | null
+          admin_id: string
+          created_at?: string | null
+          department?: string | null
+          is_super_admin?: boolean | null
+          last_login?: string | null
+          notes?: string | null
+          permissions?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          access_level?: string | null
+          admin_id?: string
+          created_at?: string | null
+          department?: string | null
+          is_super_admin?: boolean | null
+          last_login?: string | null
+          notes?: string | null
+          permissions?: string[] | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_profiles_admin_id_fkey1"
+            columns: ["admin_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_profiles_admin_id_fkey1"
+            columns: ["admin_id"]
+            isOneToOne: true
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "admin_profiles_admin_id_fkey1"
+            columns: ["admin_id"]
+            isOneToOne: true
+            referencedRelation: "user_learning_dashboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       blog_categories: {
         Row: {
           created_at: string
@@ -1217,6 +1274,36 @@ export type Database = {
           },
         ]
       }
+      session_rooms: {
+        Row: {
+          created_at: string | null
+          daily_room_name: string
+          daily_room_url: string
+          expires_at: string | null
+          id: string
+          session_id: string
+          session_type: string
+        }
+        Insert: {
+          created_at?: string | null
+          daily_room_name: string
+          daily_room_url: string
+          expires_at?: string | null
+          id?: string
+          session_id: string
+          session_type: string
+        }
+        Update: {
+          created_at?: string | null
+          daily_room_name?: string
+          daily_room_url?: string
+          expires_at?: string | null
+          id?: string
+          session_id?: string
+          session_type?: string
+        }
+        Relationships: []
+      }
       sessions: {
         Row: {
           coach_id: string
@@ -1367,9 +1454,11 @@ export type Database = {
           selected_coach_id: string | null
           selected_path: string | null
           student_id: string
-          subscription_required: boolean | null
           tokens_earned: number | null
           updated_at: string
+          verification_status:
+            | Database["public"]["Enums"]["verification_status"]
+            | null
         }
         Insert: {
           courses_completed?: string[] | null
@@ -1379,9 +1468,11 @@ export type Database = {
           selected_coach_id?: string | null
           selected_path?: string | null
           student_id: string
-          subscription_required?: boolean | null
           tokens_earned?: number | null
           updated_at?: string
+          verification_status?:
+            | Database["public"]["Enums"]["verification_status"]
+            | null
         }
         Update: {
           courses_completed?: string[] | null
@@ -1391,9 +1482,11 @@ export type Database = {
           selected_coach_id?: string | null
           selected_path?: string | null
           student_id?: string
-          subscription_required?: boolean | null
           tokens_earned?: number | null
           updated_at?: string
+          verification_status?:
+            | Database["public"]["Enums"]["verification_status"]
+            | null
         }
         Relationships: [
           {
@@ -1518,9 +1611,9 @@ export type Database = {
           current_period_start: string | null
           id: string
           plan_id: string | null
-          prof_id: string | null
           status: string
           updated_at: string | null
+          user_subs_id: string | null
         }
         Insert: {
           cancel_at_period_end?: boolean | null
@@ -1529,9 +1622,9 @@ export type Database = {
           current_period_start?: string | null
           id?: string
           plan_id?: string | null
-          prof_id?: string | null
           status: string
           updated_at?: string | null
+          user_subs_id?: string | null
         }
         Update: {
           cancel_at_period_end?: boolean | null
@@ -1540,9 +1633,9 @@ export type Database = {
           current_period_start?: string | null
           id?: string
           plan_id?: string | null
-          prof_id?: string | null
           status?: string
           updated_at?: string | null
+          user_subs_id?: string | null
         }
         Relationships: [
           {
@@ -1553,11 +1646,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "subscriptions_prof_id_fkey"
-            columns: ["prof_id"]
+            foreignKeyName: "subscriptions_user_subs_id_fkey"
+            columns: ["user_subs_id"]
             isOneToOne: false
-            referencedRelation: "user_profiles"
-            referencedColumns: ["prof_id"]
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_user_subs_id_fkey"
+            columns: ["user_subs_id"]
+            isOneToOne: false
+            referencedRelation: "user_complete_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "subscriptions_user_subs_id_fkey"
+            columns: ["user_subs_id"]
+            isOneToOne: false
+            referencedRelation: "user_learning_dashboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -2142,6 +2249,10 @@ export type Database = {
       generate_slug: {
         Args: { title: string }
         Returns: string
+      }
+      is_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
       }
       populate_role_specific_tables: {
         Args: Record<PropertyKey, never>

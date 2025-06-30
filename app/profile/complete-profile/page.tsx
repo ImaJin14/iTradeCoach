@@ -40,7 +40,7 @@ import { supabase } from "@/lib/supabase";
 
 const formSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
-  role: z.enum(["student", "coach"], {
+  role: z.enum(["student", "coach", "admin"], {
     required_error: "Please select your role",
   }),
   bio: z.string().max(500, { message: "Bio must be less than 500 characters" }).optional(),
@@ -185,6 +185,22 @@ function CompleteProfileForm() {
           });
 
         if (studentProfileError) throw studentProfileError;
+      } else if (data.role === 'admin') {
+        const { error: adminProfileError } = await (supabase as any)
+          .from('admin_profiles')
+          .upsert({
+            admin_id: user.id,
+            permissions: ['read', 'write', 'delete', 'manage_users', 'manage_content'],
+            access_level: 'full',
+            department: 'general',
+            last_login: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'admin_id'
+          });
+
+        if (adminProfileError) throw adminProfileError;
       }
 
       // Update auth user metadata
@@ -203,7 +219,26 @@ function CompleteProfileForm() {
         title: "Profile completed!",
         description: "Welcome to iTradeCoach. Your profile has been set up successfully.",
       });
+
+      // Debug logging
+      console.log("Profile completion - User role:", data.role);
+      console.log("Profile completion - User ID:", user.id);
       
+      // Verify the user_profiles record was created
+      const { data: verifyProfile, error: verifyError } = await supabase
+        .from('user_profiles')
+        .select('profile_complete')
+        .eq('prof_id', user.id)
+        .single();
+      
+      if (verifyError) {
+        console.error("Failed to verify user profile:", verifyError);
+      } else {
+        console.log("User profile verification:", verifyProfile);
+      }
+      
+      // All users go to main dashboard (admin rendering is handled there)
+      console.log("Redirecting all users to /dashboard");
       router.replace("/dashboard");
     } catch (error: any) {
       console.error("Profile completion error:", error);

@@ -349,7 +349,7 @@ export default function CoachDashboard() {
                 <>
                   <div className="text-lg font-medium">No sessions scheduled</div>
                   <Button asChild variant="link" className="px-0 hover:scale-105 transition-transform duration-200">
-                    <Link href="/schedule-session">Schedule Sessions</Link>
+                    <Link href="/sessions/schedule">Schedule Sessions</Link>
                   </Button>
                 </>
               )}
@@ -444,7 +444,7 @@ export default function CoachDashboard() {
                 <div className="text-center py-6 text-muted-foreground">
                   <p>No upcoming sessions</p>
                   <Button asChild variant="outline" className="mt-2 hover:scale-105 transition-transform duration-200">
-                    <Link href="/schedule-session">Schedule Sessions</Link>
+                    <Link href="/sessions/schedule">Schedule Sessions</Link>
                   </Button>
                 </div>
               )}
