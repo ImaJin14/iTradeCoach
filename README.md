@@ -1,4 +1,3 @@
-
 # iTradeCoach.online
 
 **Smarter Trading Starts Here**
@@ -30,9 +29,81 @@ iTradeCoach is an AI-powered trading education platform that combines real-time 
 | [ElevenLabs](https://www.elevenlabs.io) | Voice-enabled multimodal support |
 | [RevenueCat](https://www.revenuecat.com) | Subscription and billing management |
 
-## 🔧 Setup Instructions
+## 🔧 Local Development Setup Guide
 
-> ⚠️ This project was built entirely inside [Bolt](https://bolt.new) — a cloud-based AI development platform. Traditional local setup is not applicable.
+This project was initially built using [Bolt](https://bolt.new), a cloud-based AI development platform. However, you can run it locally with the following steps:
+
+---
+
+### 🚀 1. Fork & Clone the Repository
+
+1. **Fork** the repository to your GitHub account:  
+   👉 [https://github.com/ImaJin14/iTradeCoach](https://github.com/ImaJin14/iTradeCoach)
+
+2. **Clone** your forked version:
+   ```bash
+   git clone https://github.com/<your-username>/iTradeCoach.git
+   cd iTradeCoach
+   ```
+
+---
+
+### 📦 2. Install Dependencies
+
+You can use either `npm` or `yarn` to install dependencies:
+
+```bash
+# Using npm
+npm install
+
+# OR using yarn
+yarn install
+```
+
+---
+
+### 🔐 3. Create a `.env` File
+
+In the project root, create a `.env` file and fill in the following environment variables:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_REVENUECAT_WEB_BILLING_PUBLIC_KEY=
+NEXT_PUBLIC_REVENUECAT_WEB_BILLING_PUBLIC_KEY_SANDBOX=
+REVENUECAT_SECRET_API_KEY=
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY_TEST=
+STRIPE_SECRET_KEY_TEST=
+REVENUECAT_WEBHOOK_SECRET=
+TAVUS_API_KEY=
+TAVUS_WEBHOOK_SECRET=  # optional
+NEXT_PUBLIC_APP_URL=https://itradecoach.online
+ELEVENLABS_API_KEY=
+NEXT_PUBLIC_ELEVENLABS_DEFAULT_AGENT_ID=
+ELEVENLABS_PREMIUM_AGENT_ID=
+OPENAI_API_KEY=
+OPENAI_API_KEY_Admin= 
+```
+
+⚠️ **Important:** Do not commit your `.env` file to version control!
+
+---
+
+### 🧪 4. Run the App Locally
+
+Start the development server:
+
+```bash
+# Using npm
+npm run dev
+
+# OR using yarn
+yarn dev
+```
+
+The app should now be running at:  
+👉 [http://localhost:3000](http://localhost:3000)
 
 ## 🛣️ Roadmap
 
@@ -44,7 +115,7 @@ iTradeCoach is an AI-powered trading education platform that combines real-time 
 
 ## 📜 License
 
-This project is licensed under the MIT License.
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
