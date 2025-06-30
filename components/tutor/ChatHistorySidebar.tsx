@@ -1,4 +1,4 @@
-// components/tutor/ChatHistorySidebar.tsx - Chat history sidebar
+// components/tutor/ChatHistorySidebar.tsx - Enhanced with better error handling and debugging
 "use client";
 
 import { useState, useEffect } from "react";
@@ -14,7 +14,8 @@ import {
   Clock,
   Plus,
   Search,
-  MoreVertical
+  MoreVertical,
+  AlertCircle
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -50,6 +51,7 @@ export function ChatHistorySidebar({
 }: ChatHistorySidebarProps) {
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const { toast } = useToast();
 
@@ -59,13 +61,50 @@ export function ChatHistorySidebar({
 
   const fetchConversations = async () => {
     try {
-      const response = await fetch('/api/tutor/chat/conversations');
-      if (response.ok) {
-        const data = await response.json();
-        setConversations(data.conversations || []);
+      setLoading(true);
+      setError(null);
+      
+      console.log('Fetching conversations...');
+      
+      const response = await fetch('/api/tutor/chat/conversations', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('Conversations API response status:', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Conversations API error:', response.status, errorData);
+        throw new Error(`Failed to fetch conversations: ${response.status}`);
       }
-    } catch (error) {
+      
+      const data = await response.json();
+      console.log('Conversations data received:', data);
+      
+      if (data.conversations && Array.isArray(data.conversations)) {
+        setConversations(data.conversations);
+        console.log(`Successfully loaded ${data.conversations.length} conversations`);
+      } else {
+        console.warn('No conversations array in response:', data);
+        setConversations([]);
+      }
+    } catch (error: any) {
       console.error('Error fetching conversations:', error);
+      setError(error.message || 'Failed to load chat history');
+      
+      // Check if it's a database access issue
+      if (error.message?.includes('permission denied') || error.message?.includes('relation')) {
+        setError('Chat history database not set up. Please contact support.');
+      } else if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+        setError('Please refresh the page and sign in again.');
+      } else {
+        setError('Unable to load chat history. Please try refreshing the page.');
+      }
+      
+      setConversations([]);
     } finally {
       setLoading(false);
     }
@@ -75,6 +114,8 @@ export function ChatHistorySidebar({
     e.stopPropagation();
     
     try {
+      console.log('Deleting conversation:', conversationId);
+      
       const response = await fetch(`/api/tutor/chat/conversations/${conversationId}`, {
         method: 'DELETE'
       });
@@ -90,12 +131,16 @@ export function ChatHistorySidebar({
         if (conversationId === currentConversationId) {
           onNewConversation();
         }
+      } else {
+        const errorData = await response.text();
+        console.error('Delete conversation error:', response.status, errorData);
+        throw new Error(`Failed to delete conversation: ${response.status}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting conversation:', error);
       toast({
         title: "Error",
-        description: "Failed to delete conversation. Please try again.",
+        description: error.message || "Failed to delete conversation. Please try again.",
         variant: "destructive",
       });
     }
@@ -257,6 +302,20 @@ export function ChatHistorySidebar({
             <div className="p-4 text-center text-muted-foreground">
               <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto mb-2"></div>
               Loading conversations...
+            </div>
+          ) : error ? (
+            <div className="p-4 text-center text-red-600">
+              <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+              <p className="text-sm font-medium">Error loading chat history</p>
+              <p className="text-xs mt-1">{error}</p>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                onClick={fetchConversations}
+                className="mt-2"
+              >
+                Try Again
+              </Button>
             </div>
           ) : filteredConversations.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground">

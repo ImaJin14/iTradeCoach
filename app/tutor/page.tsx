@@ -46,6 +46,7 @@ interface VideoResponse {
   student_id: string;
   status: string;
   url: string | null;
+  hosted_url?: string | null;
   stream_url?: string | null;
   download_url?: string | null;
   created_at: string;
@@ -54,6 +55,9 @@ interface VideoResponse {
   question: string;
   topic?: string;
   user_level?: string;
+  error_message?: string;
+  generation_progress?: string;
+  status_details?: string;
   coach: {
     name: string;
     avatar_url: string | null;
@@ -237,7 +241,7 @@ export default function TutorPage() {
     // Store the interval
     setPollingIntervals(prev => new Map(prev).set(videoId, pollInterval));
 
-    // Clear polling after 10 minutes (videos should be ready by then)
+    // Clear polling after 4 hours (14400000 milliseconds = 4 * 60 * 60 * 1000)
     setTimeout(() => {
       clearInterval(pollInterval);
       setPollingIntervals(prev => {
@@ -246,11 +250,10 @@ export default function TutorPage() {
         return newMap;
       });
       console.log('Stopped polling for video:', videoId);
-    }, 600000);
+    }, 14400000);
   };
 
-  // Enhanced video fetching with all new fields
-  // app/tutor/page.tsx - Update the fetchVideoResponses function
+  // app/tutor/page.tsx - Fixed fetchVideoResponses function
 async function fetchVideoResponses(studentId: string) {
   try {
     const { data, error } = await supabase
@@ -261,6 +264,7 @@ async function fetchVideoResponses(studentId: string) {
         student_id,
         status,
         url,
+        hosted_url,
         stream_url,
         download_url,
         created_at,
@@ -270,7 +274,10 @@ async function fetchVideoResponses(studentId: string) {
         topic,
         user_level,
         script_used,
-        metadata
+        metadata,
+        error_message,
+        generation_progress,
+        status_details
       `)
       .eq('student_id', studentId)
       .order('created_at', { ascending: false });
@@ -287,6 +294,7 @@ async function fetchVideoResponses(studentId: string) {
       student_id: item.student_id,
       status: item.status,
       url: item.url,
+      hosted_url: item.hosted_url,
       stream_url: item.stream_url,
       download_url: item.download_url,
       created_at: item.created_at,
@@ -296,6 +304,9 @@ async function fetchVideoResponses(studentId: string) {
       question: item.question || 'Trading Question',
       topic: item.topic,
       user_level: item.user_level,
+      error_message: item.error_message,
+      generation_progress: item.generation_progress,
+      status_details: item.status_details,
       coach: {
         name: 'iTrader',
         avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1`
@@ -304,6 +315,18 @@ async function fetchVideoResponses(studentId: string) {
 
     console.log('Fetched video responses:', transformedData);
     setVideoResponses(transformedData);
+
+    // Start polling for any processing videos using the database ID (not Tavus ID)
+    transformedData.forEach(video => {
+      if (video.status === 'processing' || video.status === 'generating' || video.status === 'queued') {
+        // FIXED: Use the database record ID for polling
+        if (!pollingIntervals.has(video.id)) {
+          console.log('Starting to poll for video completion using database ID:', video.id);
+          pollForVideoCompletion(video.id);
+        }
+      }
+    });
+
   } catch (error: any) {
     console.error('Error fetching video responses:', error);
     setVideoResponses([]);

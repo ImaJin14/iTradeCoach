@@ -1,6 +1,10 @@
-// lib/itrader-config.ts - Complete updated file with fixed persona creation
+// lib/itrader-config.ts - Updated to use your existing iTrader data
 import { tavusService } from '@/lib/tavus';
 import { tavusCVIService } from '@/lib/tavus-cvi';
+
+// Define the iTrader coach UUID constant - using your existing coach
+export const ITRADER_COACH_ID = 'b8b67f8f-ba80-4730-adf8-1601c12aa586';
+export const ITRADER_TEMPLATE_ID = '86597f2c-26f0-4fe8-b6a9-37b8b21a3ea9';
 
 interface ITraderConfig {
   replicaId: string;
@@ -9,6 +13,8 @@ interface ITraderConfig {
   description: string;
   avatar_url?: string;
   specialties: string[];
+  coachId: string; // Add coach ID to config
+  templateId: string; // Add template ID to config
 }
 
 class ITraderService {
@@ -37,6 +43,8 @@ class ITraderService {
 
       this.config = {
         replicaId: iTraderReplica.replica_id,
+        coachId: ITRADER_COACH_ID, // Use your existing UUID
+        templateId: ITRADER_TEMPLATE_ID, // Use your existing template ID
         name: 'iTrader',
         description: 'Your Personal AI Trading Tutor',
         avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=itrader&backgroundColor=1e40af&accessories=prescription02&accessoriesColor=262e33&clothing=blazerShirt&clothingColor=3c4858&eyes=default&eyebrows=default&facialHair=none&hair=short01&hairColor=2c1b18&mouth=default&skin=f2d3b1`,

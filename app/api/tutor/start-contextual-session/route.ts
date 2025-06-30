@@ -1,8 +1,8 @@
-// app/api/tutor/start-contextual-session/route.ts - Fixed with valid properties only
+// app/api/tutor/start-contextual-session/route.ts - Updated to use your existing iTrader data
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/api-server';
 import { tavusCVIService } from '@/lib/tavus-cvi';
-import { iTraderService } from '@/lib/itrader-config';
+import { iTraderService, ITRADER_COACH_ID } from '@/lib/itrader-config';
 
 export async function POST(request: Request) {
   try {
@@ -25,7 +25,8 @@ export async function POST(request: Request) {
     // Always use iTrader configuration
     const iTraderConfig = await iTraderService.getITraderConfig();
     
-    console.log(`Starting session with iTrader using replica: ${iTraderConfig.replicaId}`);
+    console.log(`Starting session with existing iTrader using replica: ${iTraderConfig.replicaId}`);
+    console.log('Using existing iTrader Coach ID:', ITRADER_COACH_ID);
     console.log('Session context:', JSON.stringify(context, null, 2));
 
     // Ensure sessionType has a default value
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
         }
       }
       
-      // Create conversation with iTrader and custom greeting - FIXED properties
+      // Create conversation with iTrader and custom greeting
       const conversation = await tavusCVIService.makeRequest('/conversations', {
         method: 'POST',
         body: JSON.stringify({
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
           custom_greeting: customGreeting,
           // Additional conversational context
           conversational_context: `This is a ${sessionType} tutoring session about ${topic} with iTrader, the AI trading tutor. The student is seeking ${topicLevel} level guidance. Be proactive, educational, and start the conversation immediately.`,
-          // FIXED: Only use valid properties according to Tavus documentation
+          // Only use valid properties according to Tavus documentation
           properties: {
             max_call_duration: 3600,
             participant_left_timeout: 60,
@@ -76,17 +77,16 @@ export async function POST(request: Request) {
             enable_recording: false,
             enable_closed_captions: true,
             language: "english"
-            // REMOVED: enable_interruptions and participant_pause_sensitivity - these are not valid
           }
         }),
       });
 
-      // Save session record with iTrader as coach
+      // Save session record with your existing iTrader coach UUID
       const { data: sessionRecord } = await supabase
         .from('tutoring_sessions')
         .insert({
           student_id: user.id,
-          coach_id: 'itrader',
+          coach_id: ITRADER_COACH_ID, // Use your existing coach UUID
           conversation_id: conversation.conversation_id,
           session_type: sessionType,
           status: 'active',
